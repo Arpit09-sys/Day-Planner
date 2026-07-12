@@ -699,9 +699,9 @@ h4 { font-size: var(--font-size-lg); }
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--text);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  word-break: break-word;
   transition: color var(--transition-fast), text-decoration var(--transition-fast);
 }
 
