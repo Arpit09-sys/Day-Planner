@@ -1,25 +1,31 @@
 /* ============================================================
    Day Planner — Vanilla JavaScript Application
-   Modules: StorageManager, TaskManager, UIRenderer,
-            DailyReset, StatsEngine, App
+   Modules: ApiService, StorageManager, TaskManager,
+            UIRenderer, DailyReset, StatsEngine, App
+   
+   MongoDB Atlas integration — UI remains unchanged.
    ============================================================ */
 
 (function () {
   'use strict';
 
   /* ========== CONSTANTS ========== */
-  const STORAGE_KEY = 'dayplanner_data';
-  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const DAY_LABELS = {
+  var STORAGE_KEY = 'dayplanner_data';
+  var DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  var DAY_LABELS = {
     monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
     thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun'
   };
-  const DAY_FULL = {
+  var DAY_FULL = {
     monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
     thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
   };
 
-  const MOTIVATIONAL_QUOTES = [
+  /* ========== API + USER CONFIGURATION ========== */
+  var API_BASE_URL = window.location.origin + '/api';
+  var USERNAME = localStorage.getItem('dayplanner_username') || '';
+
+  var MOTIVATIONAL_QUOTES = [
     '"The secret of getting ahead is getting started." — Mark Twain',
     '"It always seems impossible until it\'s done." — Nelson Mandela',
     '"The only way to do great work is to love what you do." — Steve Jobs',
@@ -35,7 +41,7 @@
   ];
 
   /* ========== SVG ICON TEMPLATES ========== */
-  const Icons = {
+  var Icons = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
@@ -50,7 +56,7 @@
 
   /* ========== UTILITY HELPERS ========== */
 
-  /** Generate a unique ID */
+  /** Generate a unique ID (used as temp ID before MongoDB assigns _id) */
   function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
@@ -62,22 +68,22 @@
 
   /** Get the JS day index (0=Sun) mapped to our week (0=Mon) */
   function getTodayDayKey() {
-    const jsDay = new Date().getDay(); // 0=Sun, 1=Mon...
-    const map = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    var jsDay = new Date().getDay();
+    var map = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     return map[jsDay];
   }
 
   /** Get the dates for the current week (Mon-Sun) */
   function getCurrentWeekDates() {
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0=Sun
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(today);
+    var today = new Date();
+    var dayOfWeek = today.getDay();
+    var mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    var monday = new Date(today);
     monday.setDate(today.getDate() + mondayOffset);
 
-    const dates = {};
+    var dates = {};
     DAYS.forEach(function (day, i) {
-      const d = new Date(monday);
+      var d = new Date(monday);
       d.setDate(monday.getDate() + i);
       dates[day] = d;
     });
@@ -113,25 +119,69 @@
     return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
   }
 
-  /* ========== STORAGE MANAGER ========== */
+  /* ========== API SERVICE (MongoDB Atlas) ========== */
+  var ApiService = {
+    /** Generic fetch wrapper */
+    request: function (method, path, body) {
+      var options = {
+        method: method,
+        headers: { 'Content-Type': 'application/json' }
+      };
+      if (body) options.body = JSON.stringify(body);
+
+      return fetch(API_BASE_URL + path, options)
+        .then(function (res) { return res.json(); })
+        .catch(function (err) {
+          console.error('API ' + method + ' ' + path + ' error:', err);
+          return null;
+        });
+    },
+
+    /** GET /api/tasks/:username */
+    getAllTasks: function () {
+      return this.request('GET', '/tasks/' + encodeURIComponent(USERNAME));
+    },
+
+    /** POST /api/tasks */
+    createTask: function (taskData) {
+      return this.request('POST', '/tasks', Object.assign({ username: USERNAME }, taskData));
+    },
+
+    /** PUT /api/tasks/:taskId */
+    updateTask: function (taskId, updates) {
+      return this.request('PUT', '/tasks/' + taskId, updates);
+    },
+
+    /** DELETE /api/tasks/:taskId */
+    deleteTask: function (taskId) {
+      return this.request('DELETE', '/tasks/' + taskId);
+    },
+
+    /** PUT /api/tasks/reset/:username */
+    resetAllCompleted: function () {
+      return this.request('PUT', '/tasks/reset/' + encodeURIComponent(USERNAME));
+    }
+  };
+
+  /* ========== STORAGE MANAGER (localStorage cache + API sync) ========== */
   var StorageManager = {
-    /** Load data from localStorage */
+    /** Load cached data from localStorage */
     load: function () {
       try {
         var raw = localStorage.getItem(STORAGE_KEY);
         if (raw) return JSON.parse(raw);
       } catch (e) {
-        console.warn('Failed to load data:', e);
+        console.warn('Failed to load from localStorage:', e);
       }
       return null;
     },
 
-    /** Save data to localStorage */
+    /** Save data to localStorage (local cache) */
     save: function (data) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       } catch (e) {
-        console.warn('Failed to save data:', e);
+        console.warn('Failed to save to localStorage:', e);
       }
     },
 
@@ -149,6 +199,41 @@
           completionHistory: {}
         }
       };
+    },
+
+    /** Load tasks from MongoDB Atlas API and organize by day */
+    loadFromApi: function () {
+      return ApiService.getAllTasks().then(function (response) {
+        if (!response || !response.success) return null;
+
+        var weekData = {};
+        DAYS.forEach(function (day) { weekData[day] = []; });
+
+        response.data.forEach(function (task) {
+          if (weekData[task.day]) {
+            weekData[task.day].push({
+              id: task._id,       // Use MongoDB _id as the primary identifier
+              _id: task._id,
+              title: task.title,
+              time: task.time || '',
+              priority: task.priority || 'medium',
+              notes: task.notes || '',
+              completed: task.completed || false,
+              order: typeof task.order === 'number' ? task.order : 0
+            });
+          }
+        });
+
+        // Sort each day by time
+        DAYS.forEach(function (day) {
+          weekData[day].sort(function (a, b) {
+            return timeToMinutes(a.time) - timeToMinutes(b.time);
+          });
+          weekData[day].forEach(function (t, i) { t.order = i; });
+        });
+
+        return weekData;
+      });
     }
   };
 
@@ -156,9 +241,11 @@
   var TaskManager = {
     data: null,
 
-    /** Initialize — load or create data */
-    init: function () {
+    /** Initialize — load from API, fallback to localStorage */
+    init: async function () {
+      // Start with localStorage cache (for instant render)
       this.data = StorageManager.load() || StorageManager.getDefault();
+
       // Ensure all days exist
       DAYS.forEach(function (day) {
         if (!this.data.weekData[day]) this.data.weekData[day] = [];
@@ -166,15 +253,27 @@
       if (!this.data.stats) {
         this.data.stats = { streak: 0, completionHistory: {} };
       }
-      this.save();
+
+      // Try to load fresh data from MongoDB Atlas
+      try {
+        var apiWeekData = await StorageManager.loadFromApi();
+        if (apiWeekData) {
+          this.data.weekData = apiWeekData;
+        }
+      } catch (err) {
+        console.warn('Could not load from API, using localStorage cache:', err);
+      }
+
+      this.saveLocal();
     },
 
-    save: function () {
+    /** Save to localStorage only (cache) */
+    saveLocal: function () {
       StorageManager.save(this.data);
     },
 
-    /** Add a new task to a day */
-    addTask: function (day, taskData) {
+    /** Add a new task to a day — saves to API + local cache */
+    addTask: async function (day, taskData) {
       var task = {
         id: generateId(),
         title: taskData.title,
@@ -184,53 +283,104 @@
         completed: false,
         order: this.data.weekData[day].length
       };
+
+      // Save to MongoDB Atlas
+      try {
+        var response = await ApiService.createTask({
+          day: day,
+          title: task.title,
+          time: task.time,
+          priority: task.priority,
+          notes: task.notes,
+          order: task.order
+        });
+        if (response && response.success) {
+          task.id = response.data._id;
+          task._id = response.data._id;
+        }
+      } catch (err) {
+        console.warn('API create failed, saving locally:', err);
+      }
+
       this.data.weekData[day].push(task);
       this.sortByTime(day);
-      this.save();
+      this.saveLocal();
       return task;
     },
 
-    /** Edit an existing task */
-    editTask: function (day, taskId, updates) {
+    /** Edit an existing task — updates API + local cache */
+    editTask: async function (day, taskId, updates) {
       var tasks = this.data.weekData[day];
       for (var i = 0; i < tasks.length; i++) {
-        if (tasks[i].id === taskId) {
+        if (tasks[i].id === taskId || tasks[i]._id === taskId) {
           Object.keys(updates).forEach(function (key) {
             tasks[i][key] = updates[key];
           });
+
+          // Sync to MongoDB Atlas
+          var mongoId = tasks[i]._id || tasks[i].id;
+          try {
+            await ApiService.updateTask(mongoId, updates);
+          } catch (err) {
+            console.warn('API update failed:', err);
+          }
           break;
         }
       }
       this.sortByTime(day);
-      this.save();
+      this.saveLocal();
     },
 
-    /** Delete a task */
-    deleteTask: function (day, taskId) {
+    /** Delete a task — removes from API + local cache */
+    deleteTask: async function (day, taskId) {
+      var taskToDelete = null;
       this.data.weekData[day] = this.data.weekData[day].filter(function (t) {
-        return t.id !== taskId;
+        if (t.id === taskId || t._id === taskId) {
+          taskToDelete = t;
+          return false;
+        }
+        return true;
       });
-      this.save();
+
+      // Sync to MongoDB Atlas
+      if (taskToDelete) {
+        var mongoId = taskToDelete._id || taskToDelete.id;
+        try {
+          await ApiService.deleteTask(mongoId);
+        } catch (err) {
+          console.warn('API delete failed:', err);
+        }
+      }
+
+      this.saveLocal();
     },
 
-    /** Toggle task completion */
-    toggleComplete: function (day, taskId) {
+    /** Toggle task completion — updates API + local cache */
+    toggleComplete: async function (day, taskId) {
       var tasks = this.data.weekData[day];
       for (var i = 0; i < tasks.length; i++) {
-        if (tasks[i].id === taskId) {
+        if (tasks[i].id === taskId || tasks[i]._id === taskId) {
           tasks[i].completed = !tasks[i].completed;
+
+          // Sync to MongoDB Atlas
+          var mongoId = tasks[i]._id || tasks[i].id;
+          try {
+            await ApiService.updateTask(mongoId, { completed: tasks[i].completed });
+          } catch (err) {
+            console.warn('API toggle failed:', err);
+          }
           break;
         }
       }
-      this.save();
+      this.saveLocal();
     },
 
     /** Reorder a task (direction: 'up' or 'down') */
-    reorderTask: function (day, taskId, direction) {
+    reorderTask: async function (day, taskId, direction) {
       var tasks = this.data.weekData[day];
       var idx = -1;
       for (var i = 0; i < tasks.length; i++) {
-        if (tasks[i].id === taskId) { idx = i; break; }
+        if (tasks[i].id === taskId || tasks[i]._id === taskId) { idx = i; break; }
       }
       if (idx === -1) return;
 
@@ -244,7 +394,20 @@
 
       // Update order
       tasks.forEach(function (t, i) { t.order = i; });
-      this.save();
+
+      // Sync both tasks to API
+      try {
+        var mongoId1 = tasks[idx]._id || tasks[idx].id;
+        var mongoId2 = tasks[swapIdx]._id || tasks[swapIdx].id;
+        await Promise.all([
+          ApiService.updateTask(mongoId1, { order: tasks[idx].order }),
+          ApiService.updateTask(mongoId2, { order: tasks[swapIdx].order })
+        ]);
+      } catch (err) {
+        console.warn('API reorder failed:', err);
+      }
+
+      this.saveLocal();
     },
 
     /** Sort tasks by time */
@@ -264,7 +427,7 @@
     getTask: function (day, taskId) {
       var tasks = this.data.weekData[day] || [];
       for (var i = 0; i < tasks.length; i++) {
-        if (tasks[i].id === taskId) return tasks[i];
+        if (tasks[i].id === taskId || tasks[i]._id === taskId) return tasks[i];
       }
       return null;
     }
@@ -273,13 +436,13 @@
   /* ========== DAILY RESET ========== */
   var DailyReset = {
     /** Check and perform daily reset if needed */
-    check: function () {
+    check: async function () {
       var today = todayStr();
       if (TaskManager.data.lastResetDate !== today) {
         // Snapshot yesterday's data for stats before resetting
         this.snapshotStats();
 
-        // Reset all completion statuses
+        // Reset all completion statuses locally
         DAYS.forEach(function (day) {
           var tasks = TaskManager.data.weekData[day];
           tasks.forEach(function (task) {
@@ -287,8 +450,15 @@
           });
         });
 
+        // Reset in MongoDB Atlas
+        try {
+          await ApiService.resetAllCompleted();
+        } catch (err) {
+          console.warn('API reset failed:', err);
+        }
+
         TaskManager.data.lastResetDate = today;
-        TaskManager.save();
+        TaskManager.saveLocal();
       }
     },
 
@@ -326,7 +496,7 @@
       var history = TaskManager.data.stats.completionHistory;
       var streak = 0;
       var d = new Date();
-      d.setDate(d.getDate() - 1); // Start from yesterday
+      d.setDate(d.getDate() - 1);
 
       while (true) {
         var dateStr = d.toISOString().split('T')[0];
@@ -394,7 +564,7 @@
     }
   };
 
-  /* ========== UI RENDERER ========== */
+  /* ========== UI RENDERER (UNCHANGED) ========== */
   var UIRenderer = {
     weekDates: null,
 
@@ -530,9 +700,7 @@
       item.dataset.day = day;
 
       var timeDisplay = task.time ? formatTime12h(task.time) : '';
-      var notesIndicator = task.notes ? '<span class="task-item__notes-indicator" title="' + this.escapeHtml(task.notes) + '">📝</span>' : '';
 
-      // We use a text-based notes indicator to avoid emoji. Let's use an SVG-based approach instead.
       var notesHtml = task.notes ?
         '<span class="task-item__notes-indicator" title="' + this.escapeHtml(task.notes) + '" style="display:inline-flex;width:11px;height:11px;color:var(--text-tertiary)">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>' +
@@ -593,7 +761,7 @@
     }
   };
 
-  /* ========== MODAL CONTROLLER ========== */
+  /* ========== MODAL CONTROLLER (UNCHANGED except handleSave is async) ========== */
   var ModalController = {
     backdrop: null,
     modal: null,
@@ -661,7 +829,6 @@
       this.setPriority('medium');
 
       this.show();
-      // Focus the title field
       setTimeout(function () {
         document.getElementById('task-title').focus();
       }, 200);
@@ -722,8 +889,8 @@
       if (this.previousFocus) this.previousFocus.focus();
     },
 
-    /** Handle save / update */
-    handleSave: function () {
+    /** Handle save / update (async for API calls) */
+    handleSave: async function () {
       var title = document.getElementById('task-title').value.trim();
       if (!title) return;
 
@@ -735,14 +902,14 @@
       var priority = priorityEl ? priorityEl.dataset.priority : 'medium';
 
       if (this.isEditing && this.currentTaskId) {
-        TaskManager.editTask(this.currentDay, this.currentTaskId, {
+        await TaskManager.editTask(this.currentDay, this.currentTaskId, {
           title: title,
           time: time,
           priority: priority,
           notes: notes
         });
       } else {
-        TaskManager.addTask(this.currentDay, {
+        await TaskManager.addTask(this.currentDay, {
           title: title,
           time: time,
           priority: priority,
@@ -758,22 +925,21 @@
 
   /* ========== EVENT DELEGATION ========== */
   function setupEventDelegation() {
-    // Planner grid — handles all task actions via delegation
     var plannerGrid = document.getElementById('planner-grid');
 
-    // Handle checkbox toggle via 'change' event (avoids double-toggle)
-    plannerGrid.addEventListener('change', function (e) {
+    // Handle checkbox toggle via 'change' event
+    plannerGrid.addEventListener('change', async function (e) {
       if (e.target.matches('[data-action="toggle"]')) {
         var day = e.target.dataset.day;
         var taskId = e.target.dataset.taskId;
-        TaskManager.toggleComplete(day, taskId);
+        await TaskManager.toggleComplete(day, taskId);
         UIRenderer.refreshDayCard(day);
         UIRenderer.renderStats();
       }
     });
 
     // Handle click-based actions (edit, delete, reorder, add)
-    plannerGrid.addEventListener('click', function (e) {
+    plannerGrid.addEventListener('click', async function (e) {
       // Skip checkbox clicks — handled by 'change' above
       if (e.target.matches('[data-action="toggle"]') || e.target.closest('.task-item__checkbox')) {
         return;
@@ -781,7 +947,6 @@
 
       var target = e.target.closest('[data-action]');
       if (!target) {
-        // Check if it's an add button
         var addBtn = e.target.closest('.day-card__add-btn');
         if (addBtn) {
           ModalController.openAdd(addBtn.dataset.day);
@@ -802,8 +967,8 @@
           var taskItem = document.getElementById('task-' + taskId);
           if (taskItem) {
             taskItem.classList.add('task-item--removing');
-            setTimeout(function () {
-              TaskManager.deleteTask(day, taskId);
+            setTimeout(async function () {
+              await TaskManager.deleteTask(day, taskId);
               UIRenderer.refreshDayCard(day);
               UIRenderer.renderStats();
             }, 250);
@@ -811,25 +976,25 @@
           break;
 
         case 'move-up':
-          TaskManager.reorderTask(day, taskId, 'up');
+          await TaskManager.reorderTask(day, taskId, 'up');
           UIRenderer.refreshDayCard(day);
           break;
 
         case 'move-down':
-          TaskManager.reorderTask(day, taskId, 'down');
+          await TaskManager.reorderTask(day, taskId, 'down');
           UIRenderer.refreshDayCard(day);
           break;
       }
     });
   }
 
-  /* ========== APP INITIALIZATION ========== */
-  function initApp() {
-    // 1. Initialize data
-    TaskManager.init();
+  /* ========== APP INITIALIZATION (async for API loading) ========== */
+  async function initApp() {
+    // 1. Initialize data (loads from API)
+    await TaskManager.init();
 
     // 2. Check for daily reset
-    DailyReset.check();
+    await DailyReset.check();
 
     // 3. Initialize modal
     ModalController.init();
@@ -844,13 +1009,50 @@
     setInterval(function () {
       UIRenderer.renderHeroQuote();
     }, 30000);
+
+    console.log('✅ Day Planner initialized (user: ' + USERNAME + ')');
   }
 
-  // Start the app when DOM is ready
+  /* ========== WELCOME MODAL HANDLER ========== */
+  function setupWelcome() {
+    var overlay = document.getElementById('welcome-overlay');
+    var form = document.getElementById('welcome-form');
+    var input = document.getElementById('welcome-username');
+
+    // If user already has a username, skip the welcome screen
+    if (USERNAME) {
+      overlay.classList.add('hidden');
+      initApp();
+      return;
+    }
+
+    // Show the welcome overlay and focus the input
+    overlay.classList.remove('hidden');
+    setTimeout(function () { input.focus(); }, 400);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = input.value.trim();
+      if (!name) return;
+
+      USERNAME = name;
+      localStorage.setItem('dayplanner_username', USERNAME);
+
+      // Fade out the welcome overlay
+      overlay.classList.add('hidden');
+
+      // Start the app after the fade animation
+      setTimeout(function () {
+        initApp();
+      }, 500);
+    });
+  }
+
+  // Start when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
+    document.addEventListener('DOMContentLoaded', setupWelcome);
   } else {
-    initApp();
+    setupWelcome();
   }
 
 })();
