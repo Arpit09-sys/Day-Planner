@@ -1,13 +1,9 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
+  "framework": null,
+  "buildCommand": false,
+  "installCommand": "npm install",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/$1" }
+    { "source": "/api/(.*)", "destination": "/api/$1" }
   ]
 }
