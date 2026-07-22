@@ -1,9 +1,10 @@
 /* ============================================================
-   Day Planner — Vanilla JavaScript Application
+   Day Planner — Vanilla JavaScript Application (v2.0 Redesign)
    Modules: ApiService, StorageManager, TaskManager,
             UIRenderer, DailyReset, StatsEngine, App
+            + UIEnhancements (toast, celebrations, heatmap, counters)
    
-   MongoDB Atlas integration — UI remains unchanged.
+   MongoDB Atlas integration — All original logic preserved.
    ============================================================ */
 
 (function () {
@@ -40,6 +41,27 @@
     '"Small daily improvements over time lead to stunning results." — Robin Sharma'
   ];
 
+  /* ========== POSITIVE REINFORCEMENT MESSAGES ========== */
+  var ENCOURAGEMENT_MESSAGES = [
+    'Great job! 🎉',
+    'Nice work! ✨',
+    'One step closer! 🚀',
+    "You're making progress! 💪",
+    'Keep going! 🔥',
+    'Excellent! ⭐',
+    'Well done! 👏',
+    'Crushed it! 💯',
+    'On a roll! 🌟',
+    'Fantastic! 🏆'
+  ];
+
+  var MILESTONE_MESSAGES = {
+    25: 'Quarter way there! Keep the momentum going.',
+    50: "Halfway done! You're doing amazing.",
+    75: 'Almost there! The finish line is in sight.',
+    100: "All tasks complete! You're a productivity champion!"
+  };
+
   /* ========== SVG ICON TEMPLATES ========== */
   var Icons = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
@@ -51,7 +73,9 @@
     clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
     target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
     empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg>',
-    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>'
+    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>',
+    // Empty state SVG illustration
+    emptyIllustration: '<svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="15" width="80" height="70" rx="8" fill="#EFF1F7" stroke="#E2E5EF" stroke-width="1.5"/><rect x="32" y="30" width="56" height="6" rx="3" fill="#E2E5EF"/><rect x="32" y="42" width="40" height="6" rx="3" fill="#E2E5EF"/><rect x="32" y="54" width="48" height="6" rx="3" fill="#E2E5EF"/><circle cx="60" cy="75" r="3" fill="#9AA0B2" opacity="0.5"/><path d="M85 10l5-5M90 15l5-5M80 5l3-3" stroke="#D4A843" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/><circle cx="95" cy="25" r="8" fill="#EFF1F7" stroke="#E2E5EF" stroke-width="1"/><path d="M93 25l2 2 4-4" stroke="#9AA0B2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg>'
   };
 
   /* ========== UTILITY HELPERS ========== */
@@ -117,6 +141,16 @@
     if (!timeStr) return 9999;
     var parts = timeStr.split(':');
     return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  }
+
+  /** Get time-of-day greeting */
+  function getGreeting() {
+    var hour = new Date().getHours();
+    var name = USERNAME ? ', ' + USERNAME : '';
+    if (hour < 12) return 'Good morning' + name + ' ☀️';
+    if (hour < 17) return 'Good afternoon' + name + ' 🌤️';
+    if (hour < 21) return 'Good evening' + name + ' 🌅';
+    return 'Good night' + name + ' 🌙';
   }
 
   /* ========== API SERVICE (MongoDB Atlas) ========== */
@@ -358,9 +392,11 @@
     /** Toggle task completion — updates API + local cache */
     toggleComplete: async function (day, taskId) {
       var tasks = this.data.weekData[day];
+      var toggledTask = null;
       for (var i = 0; i < tasks.length; i++) {
         if (tasks[i].id === taskId || tasks[i]._id === taskId) {
           tasks[i].completed = !tasks[i].completed;
+          toggledTask = tasks[i];
 
           // Sync to MongoDB Atlas
           var mongoId = tasks[i]._id || tasks[i].id;
@@ -373,6 +409,7 @@
         }
       }
       this.saveLocal();
+      return toggledTask;
     },
 
     /** Reorder a task (direction: 'up' or 'down') */
@@ -554,17 +591,366 @@
         }
       });
 
+      // Today completion percentage
+      var todayTotal = todayTasks.length;
+      var todayPct = todayTotal > 0 ? Math.round((completedToday / todayTotal) * 100) : 0;
+
       return {
         completedToday: completedToday,
         pendingToday: pendingToday,
+        todayTotal: todayTotal,
+        todayPct: todayPct,
         weeklyPct: weeklyPct,
         streak: TaskManager.data.stats.streak || 0,
         mostProductiveDay: maxCompleted > 0 ? mostProductiveDay : '—'
       };
+    },
+
+    /** Calculate longest streak from history */
+    getLongestStreak: function () {
+      var history = TaskManager.data.stats.completionHistory || {};
+      var dates = Object.keys(history).sort();
+      if (dates.length === 0) return 0;
+
+      var longest = 0;
+      var current = 0;
+      var prevDate = null;
+
+      dates.forEach(function (dateStr) {
+        var entry = history[dateStr];
+        if (entry && entry.completed > 0) {
+          if (prevDate) {
+            var prev = new Date(prevDate);
+            var curr = new Date(dateStr);
+            var diffDays = Math.round((curr - prev) / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) {
+              current++;
+            } else {
+              current = 1;
+            }
+          } else {
+            current = 1;
+          }
+          if (current > longest) longest = current;
+          prevDate = dateStr;
+        } else {
+          current = 0;
+          prevDate = null;
+        }
+      });
+
+      return longest;
+    },
+
+    /** Count active days this month */
+    getActiveDaysThisMonth: function () {
+      var history = TaskManager.data.stats.completionHistory || {};
+      var now = new Date();
+      var yearMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      var count = 0;
+
+      Object.keys(history).forEach(function (dateStr) {
+        if (dateStr.startsWith(yearMonth) && history[dateStr].completed > 0) {
+          count++;
+        }
+      });
+
+      return count;
     }
   };
 
-  /* ========== UI RENDERER (UNCHANGED) ========== */
+  /* ========== UI ENHANCEMENTS (NEW) ========== */
+  var UIEnhancements = {
+    /** Previous milestone — track to avoid duplicate celebrations */
+    _lastMilestone: 0,
+
+    /** Show a toast notification */
+    showToast: function (message, type) {
+      var container = document.getElementById('toast-container');
+      if (!container) return;
+
+      var toast = document.createElement('div');
+      toast.className = 'toast toast--' + (type || 'success');
+
+      var iconClass = type === 'milestone' ? 'milestone' : 'success';
+      var iconSvg = type === 'milestone'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+      toast.innerHTML =
+        '<div class="toast__icon toast__icon--' + iconClass + '">' + iconSvg + '</div>' +
+        '<span>' + message + '</span>';
+
+      container.appendChild(toast);
+
+      // Auto-remove after 3 seconds
+      setTimeout(function () {
+        toast.classList.add('toast--removing');
+        setTimeout(function () {
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
+      }, 3000);
+    },
+
+    /** Show random encouragement toast */
+    showEncouragement: function () {
+      var msg = ENCOURAGEMENT_MESSAGES[Math.floor(Math.random() * ENCOURAGEMENT_MESSAGES.length)];
+      this.showToast(msg, 'success');
+    },
+
+    /** Check and celebrate milestones */
+    checkMilestones: function (stats) {
+      var pct = stats.todayPct;
+      var milestones = [25, 50, 75, 100];
+
+      for (var i = 0; i < milestones.length; i++) {
+        var m = milestones[i];
+        if (pct >= m && this._lastMilestone < m) {
+          this._lastMilestone = m;
+          var msg = MILESTONE_MESSAGES[m];
+          this.showToast(msg, 'milestone');
+
+          // Confetti at 100%
+          if (m === 100) {
+            this.launchCelebration();
+          }
+          break;
+        }
+      }
+
+      // Reset milestone tracker if percentage drops
+      if (pct < 25) this._lastMilestone = 0;
+      else if (pct < 50) this._lastMilestone = 25;
+      else if (pct < 75) this._lastMilestone = 50;
+      else if (pct < 100) this._lastMilestone = 75;
+    },
+
+    /** Animate a counter from current to target */
+    animateCounter: function (element, target, suffix, duration) {
+      if (!element) return;
+      suffix = suffix || '';
+      duration = duration || 600;
+
+      var currentText = element.textContent.replace(/[^0-9]/g, '');
+      var start = parseInt(currentText, 10) || 0;
+      if (start === target) {
+        element.textContent = target + suffix;
+        return;
+      }
+
+      var startTime = performance.now();
+      function update(currentTime) {
+        var elapsed = currentTime - startTime;
+        var progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic
+        var eased = 1 - Math.pow(1 - progress, 3);
+        var current = Math.round(start + (target - start) * eased);
+        element.textContent = current + suffix;
+
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        }
+      }
+      requestAnimationFrame(update);
+    },
+
+    /** Update the SVG progress ring */
+    updateProgressRing: function (percentage) {
+      var circle = document.getElementById('progress-ring-circle');
+      var text = document.getElementById('progress-ring-pct');
+      if (!circle || !text) return;
+
+      var radius = 34;
+      var circumference = 2 * Math.PI * radius;
+      var offset = circumference - (percentage / 100) * circumference;
+
+      circle.style.strokeDasharray = circumference;
+      circle.style.strokeDashoffset = offset;
+
+      this.animateCounter(text, percentage, '%', 600);
+    },
+
+    /** Update the motivational dashboard */
+    updateDashboard: function (stats) {
+      // Progress ring
+      this.updateProgressRing(stats.todayPct);
+
+      // Tasks done
+      var tasksDoneEl = document.getElementById('dash-tasks-done');
+      if (tasksDoneEl) {
+        tasksDoneEl.textContent = stats.completedToday + ' / ' + stats.todayTotal + ' tasks';
+      }
+
+      // Streak
+      var streakEl = document.getElementById('dash-streak-val');
+      if (streakEl) {
+        streakEl.textContent = stats.streak + (stats.streak === 1 ? ' day' : ' days');
+      }
+
+      // Remaining
+      var remainingEl = document.getElementById('dash-remaining-val');
+      if (remainingEl) {
+        remainingEl.textContent = stats.pendingToday + (stats.pendingToday === 1 ? ' task' : ' tasks');
+      }
+
+      // Goal
+      var goalEl = document.getElementById('dash-goal-val');
+      if (goalEl) {
+        if (stats.todayTotal === 0) {
+          goalEl.textContent = 'Add some tasks!';
+        } else if (stats.todayPct === 100) {
+          goalEl.textContent = 'All done! 🎉';
+        } else {
+          goalEl.textContent = 'Complete all ' + stats.todayTotal + ' tasks';
+        }
+      }
+
+      // Check milestones
+      this.checkMilestones(stats);
+    },
+
+    /** Render the calendar heatmap */
+    renderHeatmap: function () {
+      var grid = document.getElementById('heatmap-grid');
+      if (!grid) return;
+
+      var history = TaskManager.data.stats.completionHistory || {};
+      var today = new Date();
+
+      // Generate last 16 weeks (112 days) of data
+      var weeks = 16;
+      var cells = [];
+
+      // Start from 16 weeks ago, aligned to Monday
+      var startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - (weeks * 7) + 1);
+      // Align to Monday
+      var dayOfWeek = startDate.getDay();
+      var mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      startDate.setDate(startDate.getDate() + mondayOffset);
+
+      grid.innerHTML = '';
+
+      for (var w = 0; w < weeks; w++) {
+        var weekEl = document.createElement('div');
+        weekEl.className = 'heatmap__week';
+
+        for (var d = 0; d < 7; d++) {
+          var cellDate = new Date(startDate);
+          cellDate.setDate(startDate.getDate() + w * 7 + d);
+          var dateStr = cellDate.toISOString().split('T')[0];
+
+          var dayEl = document.createElement('div');
+          dayEl.className = 'heatmap__day';
+
+          if (cellDate > today) {
+            dayEl.classList.add('heatmap__day--future');
+          } else {
+            var entry = history[dateStr];
+            var level = 0;
+            if (entry && entry.total > 0) {
+              var pct = (entry.completed / entry.total) * 100;
+              if (pct > 0 && pct <= 25) level = 1;
+              else if (pct <= 50) level = 2;
+              else if (pct <= 75) level = 3;
+              else if (pct > 75) level = 4;
+            }
+            dayEl.classList.add('heatmap__day--level-' + level);
+          }
+
+          dayEl.title = dateStr;
+          weekEl.appendChild(dayEl);
+        }
+
+        grid.appendChild(weekEl);
+      }
+
+      // Update heatmap stats
+      var totalDays = Object.keys(history).filter(function (k) {
+        return history[k].completed > 0;
+      }).length;
+
+      var totalDaysEl = document.getElementById('heatmap-total-days');
+      var currentStreakEl = document.getElementById('heatmap-current-streak');
+      var longestStreakEl = document.getElementById('heatmap-longest-streak');
+      var thisMonthEl = document.getElementById('heatmap-this-month');
+
+      if (totalDaysEl) this.animateCounter(totalDaysEl, totalDays, '', 800);
+      if (currentStreakEl) this.animateCounter(currentStreakEl, TaskManager.data.stats.streak || 0, '', 800);
+      if (longestStreakEl) this.animateCounter(longestStreakEl, StatsEngine.getLongestStreak(), '', 800);
+      if (thisMonthEl) this.animateCounter(thisMonthEl, StatsEngine.getActiveDaysThisMonth(), '', 800);
+    },
+
+    /** Launch celebration particles (lightweight CSS-based) */
+    launchCelebration: function () {
+      var canvas = document.getElementById('celebration-canvas');
+      if (!canvas) return;
+
+      var ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      var particles = [];
+      var colors = ['#4338CA', '#34D399', '#F59E42', '#A78BFA', '#F87171', '#60A5FA'];
+
+      // Create particles
+      for (var i = 0; i < 60; i++) {
+        particles.push({
+          x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+          y: canvas.height / 2,
+          vx: (Math.random() - 0.5) * 12,
+          vy: Math.random() * -14 - 4,
+          size: Math.random() * 6 + 3,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          rotation: Math.random() * 360,
+          rotationSpeed: (Math.random() - 0.5) * 10,
+          gravity: 0.15,
+          opacity: 1
+        });
+      }
+
+      var startTime = performance.now();
+      var duration = 2500;
+
+      function animate(time) {
+        var elapsed = time - startTime;
+        if (elapsed > duration) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        particles.forEach(function (p) {
+          p.x += p.vx;
+          p.vy += p.gravity;
+          p.y += p.vy;
+          p.rotation += p.rotationSpeed;
+          p.opacity = Math.max(0, 1 - elapsed / duration);
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.globalAlpha = p.opacity;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+          ctx.restore();
+        });
+
+        requestAnimationFrame(animate);
+      }
+
+      requestAnimationFrame(animate);
+    },
+
+    /** Update greeting */
+    updateGreeting: function () {
+      var el = document.getElementById('hero-greeting');
+      if (el) el.textContent = getGreeting();
+    }
+  };
+
+  /* ========== UI RENDERER ========== */
   var UIRenderer = {
     weekDates: null,
 
@@ -577,6 +963,13 @@
       this.renderStats();
       this.startClock();
       this.setupNavScroll();
+
+      // New: Update dashboard, greeting, heatmap
+      UIEnhancements.updateGreeting();
+      UIEnhancements.renderHeatmap();
+
+      // Scroll to today's card after render
+      this.scrollToToday();
     },
 
     /** Live clock in navigation */
@@ -594,6 +987,11 @@
 
       update();
       setInterval(update, 1000);
+
+      // Update greeting every minute
+      setInterval(function () {
+        UIEnhancements.updateGreeting();
+      }, 60000);
     },
 
     /** Nav date display */
@@ -654,6 +1052,9 @@
       // Header
       var dateStr = this.weekDates[day] ? formatDateShort(this.weekDates[day]) : '';
 
+      // Progress bar fill class
+      var fillClass = pct === 100 ? ' progress-bar__fill--complete' : '';
+
       card.innerHTML =
         '<div class="day-card__header">' +
           '<span class="day-card__day">' + DAY_LABELS[day] + (isToday ? ' · Today' : '') + '</span>' +
@@ -661,7 +1062,7 @@
         '</div>' +
         '<div class="day-card__progress">' +
           '<div class="progress-bar">' +
-            '<div class="progress-bar__fill" style="width: ' + pct + '%"></div>' +
+            '<div class="progress-bar__fill' + fillClass + '" style="width: ' + pct + '%"></div>' +
           '</div>' +
         '</div>' +
         '<div class="day-card__counter">' +
@@ -679,8 +1080,9 @@
       if (tasks.length === 0) {
         taskListEl.innerHTML =
           '<div class="task-list__empty">' +
-            Icons.empty +
-            '<span>No tasks yet</span>' +
+            Icons.emptyIllustration +
+            '<span class="task-list__empty-text">No tasks yet</span>' +
+            '<span class="task-list__empty-subtext">Enjoy your free time! ✨</span>' +
           '</div>';
       } else {
         tasks.forEach(function (task) {
@@ -746,11 +1148,31 @@
     /** Render statistics dashboard */
     renderStats: function () {
       var stats = StatsEngine.getStats();
-      document.getElementById('stat-completed-val').textContent = stats.completedToday;
-      document.getElementById('stat-pending-val').textContent = stats.pendingToday;
-      document.getElementById('stat-weekly-val').textContent = stats.weeklyPct + '%';
-      document.getElementById('stat-streak-val').textContent = stats.streak + (stats.streak === 1 ? ' day' : ' days');
-      document.getElementById('stat-productive-val').textContent = stats.mostProductiveDay;
+
+      // Animate stat counters
+      UIEnhancements.animateCounter(document.getElementById('stat-completed-val'), stats.completedToday, '', 500);
+      UIEnhancements.animateCounter(document.getElementById('stat-pending-val'), stats.pendingToday, '', 500);
+      UIEnhancements.animateCounter(document.getElementById('stat-weekly-val'), stats.weeklyPct, '%', 500);
+
+      var streakEl = document.getElementById('stat-streak-val');
+      if (streakEl) streakEl.textContent = stats.streak + (stats.streak === 1 ? ' day' : ' days');
+
+      var productiveEl = document.getElementById('stat-productive-val');
+      if (productiveEl) productiveEl.textContent = stats.mostProductiveDay;
+
+      // Update dashboard
+      UIEnhancements.updateDashboard(stats);
+    },
+
+    /** Scroll to today's card */
+    scrollToToday: function () {
+      var todayKey = getTodayDayKey();
+      var todayCard = document.getElementById('day-card-' + todayKey);
+      if (todayCard) {
+        setTimeout(function () {
+          todayCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }, 800);
+      }
     },
 
     /** Escape HTML for XSS safety */
@@ -761,7 +1183,7 @@
     }
   };
 
-  /* ========== MODAL CONTROLLER (UNCHANGED except handleSave is async) ========== */
+  /* ========== MODAL CONTROLLER ========== */
   var ModalController = {
     backdrop: null,
     modal: null,
@@ -932,7 +1354,22 @@
       if (e.target.matches('[data-action="toggle"]')) {
         var day = e.target.dataset.day;
         var taskId = e.target.dataset.taskId;
-        await TaskManager.toggleComplete(day, taskId);
+        var toggledTask = await TaskManager.toggleComplete(day, taskId);
+
+        // Show positive reinforcement for completion
+        if (toggledTask && toggledTask.completed) {
+          // Add completion flash animation
+          var taskEl = document.getElementById('task-' + taskId);
+          if (taskEl) {
+            taskEl.classList.add('task-item--just-completed');
+            setTimeout(function () {
+              taskEl.classList.remove('task-item--just-completed');
+            }, 600);
+          }
+
+          UIEnhancements.showEncouragement();
+        }
+
         UIRenderer.refreshDayCard(day);
         UIRenderer.renderStats();
       }
@@ -1010,7 +1447,7 @@
       UIRenderer.renderHeroQuote();
     }, 30000);
 
-    console.log('✅ Day Planner initialized (user: ' + USERNAME + ')');
+    console.log('✅ Day Planner v2.0 initialized (user: ' + USERNAME + ')');
   }
 
   /* ========== WELCOME MODAL HANDLER ========== */
