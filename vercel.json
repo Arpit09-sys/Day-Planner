@@ -2,7 +2,13 @@
   "version": 2,
   "framework": null,
   "installCommand": "npm install",
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
+    { "source": "/api/(.*)", "destination": "/server.js" }
   ]
 }
