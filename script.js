@@ -535,25 +535,35 @@
 
        $('#sync-form').addEventListener('submit', async (e) => {
          e.preventDefault();
+         
+         const btn = e.target.querySelector('button[type="submit"]');
+         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
          const name = $('#sync-username').value.trim();
          if(name) {
            USERNAME = name;
            localStorage.setItem(STORAGE_KEY_USER, USERNAME);
-           await Api.request('POST', '/user', { username: USERNAME, displayName: USERNAME });
-           await Api.syncOffline();
+           try {
+             await Api.request('POST', '/user', { username: USERNAME, displayName: USERNAME });
+             await Api.syncOffline();
+           } catch (err) {
+             console.error(err);
+           }
          }
          this.closeSyncPrompt();
          this.startApp();
-       }, { once: true });
+       });
 
        $('#sync-skip').addEventListener('click', () => {
          USERNAME = 'User'; // Local only placeholder
+         localStorage.setItem(STORAGE_KEY_USER, USERNAME); // MUST save to prevent onboarding reappearing
          this.closeSyncPrompt();
          this.startApp();
        }, { once: true });
        
        $('#sync-close').addEventListener('click', () => {
          USERNAME = 'User';
+         localStorage.setItem(STORAGE_KEY_USER, USERNAME); // MUST save to prevent onboarding reappearing
          this.closeSyncPrompt();
          this.startApp();
        }, { once: true });
