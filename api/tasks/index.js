@@ -5,7 +5,6 @@ const Task = require('../../models/Task');
  * POST /api/tasks — Create a new task
  */
 module.exports = async function handler(req, res) {
-  // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -18,17 +17,29 @@ module.exports = async function handler(req, res) {
 
   try {
     await connectDB();
-    const { username, day, title, time, priority, notes, order } = req.body;
+    const { username, day, date, title, time, priority, notes, order,
+            category, estimatedMinutes, scheduledTime, status } = req.body;
 
-    if (!username || !title || !day) {
-      return res.status(400).json({ success: false, message: 'username, day, and title are required' });
+    if (!username || !title) {
+      return res.status(400).json({ success: false, message: 'username and title are required' });
+    }
+
+    if (!day && !date) {
+      return res.status(400).json({ success: false, message: 'day or date is required' });
     }
 
     const task = await Task.create({
-      username, day, title,
+      username,
+      day: day || null,
+      date: date || '',
+      title,
       time: time || '',
       priority: priority || 'medium',
       notes: notes || '',
+      category: category || 'none',
+      estimatedMinutes: estimatedMinutes || 0,
+      scheduledTime: scheduledTime || '',
+      status: status || 'planned',
       completed: false,
       order: order || 0
     });

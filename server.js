@@ -1,5 +1,6 @@
 /* ============================================================
-   Day Planner — Express + MongoDB Atlas Server
+   Day Planner — Express + MongoDB Atlas Server (v3.0)
+   Supports: Tasks, Plans, Focus, User, Momentum
    ============================================================ */
 
 require('dotenv').config();
@@ -13,6 +14,10 @@ const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const taskRoutes = require('./routes/tasks');
+const planRoutes = require('./routes/plans');
+const focusRoutes = require('./routes/focus');
+const userRoutes = require('./routes/user');
+const momentumRoutes = require('./routes/momentum');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,11 +26,15 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Serve static frontend files (index.html, style.css, script.js)
+// Serve static frontend files
 app.use(express.static(path.join(__dirname)));
 
 /* ─── API Routes ─── */
 app.use('/api/tasks', taskRoutes);
+app.use('/api/plans', planRoutes);
+app.use('/api/focus', focusRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/momentum', momentumRoutes);
 
 /* ─── Catch-all: serve index.html for any non-API route ─── */
 app.get('*', (req, res) => {

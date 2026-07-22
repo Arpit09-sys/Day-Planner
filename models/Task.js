@@ -8,32 +8,65 @@ const taskSchema = new mongoose.Schema(
       trim: true,
       index: true
     },
+    /* Legacy field — kept for backward compatibility */
     day: {
       type: String,
-      required: [true, 'Day is required'],
-      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      default: null
+    },
+    /* New date-based field (ISO: YYYY-MM-DD) */
+    date: {
+      type: String,
+      default: ''
     },
     title: {
       type: String,
       required: [true, 'Task title is required'],
       trim: true
     },
-    time: {
+    notes: {
       type: String,
-      default: ''
+      default: '',
+      trim: true
+    },
+    category: {
+      type: String,
+      enum: ['work', 'study', 'health', 'personal', 'none'],
+      default: 'none'
     },
     priority: {
       type: String,
       enum: ['high', 'medium', 'low'],
       default: 'medium'
     },
-    notes: {
+    estimatedMinutes: {
+      type: Number,
+      default: 0
+    },
+    time: {
       type: String,
       default: ''
+    },
+    scheduledTime: {
+      type: String,
+      default: ''
+    },
+    status: {
+      type: String,
+      enum: ['planned', 'in_progress', 'complete', 'moved', 'skipped'],
+      default: 'planned'
     },
     completed: {
       type: Boolean,
       default: false
+    },
+    completedAt: {
+      type: Date,
+      default: null
+    },
+    carriedForwardFrom: {
+      type: String,
+      default: ''
     },
     order: {
       type: Number,
@@ -45,7 +78,8 @@ const taskSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for efficient queries
+// Compound indexes for efficient queries
 taskSchema.index({ username: 1, day: 1 });
+taskSchema.index({ username: 1, date: 1 });
 
 module.exports = mongoose.model('Task', taskSchema);

@@ -3,13 +3,12 @@ const Task = require('../../models/Task');
 const mongoose = require('mongoose');
 
 /**
- * Handles multiple methods on /api/tasks/[param]:
- *   GET    → param = username → fetch all tasks for user
+ * /api/tasks/[param]:
+ *   GET    → param = username → fetch all tasks (optionally filtered by date)
  *   PUT    → param = taskId  → update a task
  *   DELETE → param = taskId  → delete a task
  */
 module.exports = async function handler(req, res) {
-  // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -21,23 +20,41 @@ module.exports = async function handler(req, res) {
   try {
     await connectDB();
 
-    // ─── GET /api/tasks/:username ───
+    // GET /api/tasks/:username?date=YYYY-MM-DD
     if (req.method === 'GET') {
-      const tasks = await Task.find({ username: param }).sort({ day: 1, order: 1 });
+      const query = { username: param };
+      if (req.query.date) {
+        query.date = req.query.date;
+      }
+      const tasks = await Task.find(query).sort({ date: 1, day: 1, order: 1 });
       return res.json({ success: true, data: tasks });
     }
 
-    // ─── PUT /api/tasks/:taskId ───
+    // PUT /api/tasks/:taskId
     if (req.method === 'PUT') {
       if (!mongoose.Types.ObjectId.isValid(param)) {
         return res.status(400).json({ success: false, message: 'Invalid task ID' });
       }
 
       const updates = {};
-      const allowed = ['title', 'time', 'priority', 'notes', 'completed', 'order', 'day'];
+      const allowed = [
+        'title', 'time', 'priority', 'notes', 'completed', 'order', 'day',
+        'date', 'category', 'estimatedMinutes', 'scheduledTime', 'status',
+        'completedAt', 'carriedForwardFrom'
+      ];
       allowed.forEach(function (field) {
         if (req.body[field] !== undefined) updates[field] = req.body[field];
       });
+
+      // Auto-set completedAt when marking complete
+      if (req.body.completed === true && !req.body.completedAt) {
+        updates.completedAt = new Date();
+        updates.status = 'complete';
+      }
+      if (req.body.completed === false) {
+        updates.completedAt = null;
+        if (!req.body.status) updates.status = 'planned';
+      }
 
       const task = await Task.findByIdAndUpdate(param, updates, { new: true, runValidators: true });
       if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
@@ -45,7 +62,7 @@ module.exports = async function handler(req, res) {
       return res.json({ success: true, data: task });
     }
 
-    // ─── DELETE /api/tasks/:taskId ───
+    // DELETE /api/tasks/:taskId
     if (req.method === 'DELETE') {
       if (!mongoose.Types.ObjectId.isValid(param)) {
         return res.status(400).json({ success: false, message: 'Invalid task ID' });
