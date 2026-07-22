@@ -5,6 +5,13 @@
 
 (function () {
   'use strict';
+  window.onerror = function(msg, url, lineNo, columnNo, error) {
+     alert("Error: " + msg + "\nLine: " + lineNo + "\nCol: " + columnNo + "\n" + (error ? error.stack : ''));
+     return false;
+  };
+  window.addEventListener('unhandledrejection', function(event) {
+     alert("Unhandled Promise Rejection: " + event.reason);
+  });
 
   /* ========== 1. STATE & CONSTANTS ========== */
   const API_BASE = window.location.origin + '/api';
@@ -34,7 +41,12 @@
   const $$ = (selector) => document.querySelectorAll(selector);
 
   function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+    } catch(e) {}
+    return 'tmp_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
   function getTodayStr() {
