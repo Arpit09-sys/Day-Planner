@@ -1,6 +1,7 @@
 /* ============================================================
    Day Planner — Premium Productivity App (2026 Redesign)
    Color Psychology · Micro-Interactions · Visual Hierarchy
+   Light & Dark Mode Support
    ============================================================ */
 
 /* ---------- 1. CSS Custom Properties ---------- */
@@ -113,6 +114,66 @@
   --z-modal: 1000;
   --z-celebration: 1100;
   --z-welcome: 2000;
+}
+
+/* ---------- Dark Mode Variables ---------- */
+:root[data-theme="dark"] {
+  --bg: hsl(225, 25%, 10%);
+  --bg-alt: hsl(225, 22%, 14%);
+  --bg-warm: hsl(225, 20%, 16%);
+  --card: hsl(225, 22%, 14%);
+  --card-hover: hsl(225, 20%, 18%);
+  --text: hsl(220, 20%, 92%);
+  --text-secondary: hsl(220, 15%, 65%);
+  --text-tertiary: hsl(220, 12%, 45%);
+  --border: hsl(225, 18%, 22%);
+  --border-light: hsl(225, 18%, 18%);
+  --primary-light: hsla(235, 60%, 52%, 0.15);
+  --secondary-light: hsla(155, 55%, 48%, 0.15);
+  --accent-light: hsla(28, 90%, 58%, 0.15);
+  --danger-light: hsla(5, 70%, 62%, 0.15);
+  --warning-light: hsla(38, 92%, 55%, 0.15);
+  --purple-light: hsla(260, 60%, 58%, 0.15);
+  --shadow-xs: 0 1px 2px hsla(0, 0%, 0%, 0.2);
+  --shadow-sm: 0 1px 3px hsla(0, 0%, 0%, 0.25), 0 1px 2px hsla(0, 0%, 0%, 0.15);
+  --shadow-md: 0 4px 12px hsla(0, 0%, 0%, 0.3), 0 2px 4px hsla(0, 0%, 0%, 0.2);
+  --shadow-lg: 0 8px 24px hsla(0, 0%, 0%, 0.35), 0 4px 8px hsla(0, 0%, 0%, 0.2);
+  --shadow-xl: 0 16px 40px hsla(0, 0%, 0%, 0.4), 0 8px 16px hsla(0, 0%, 0%, 0.25);
+  --shadow-card: 0 1px 3px hsla(0, 0%, 0%, 0.2), 0 4px 16px hsla(0, 0%, 0%, 0.15);
+  --shadow-card-hover: 0 8px 28px hsla(0, 0%, 0%, 0.35), 0 4px 10px hsla(0, 0%, 0%, 0.2);
+  --shadow-primary: 0 4px 16px hsla(235, 60%, 52%, 0.35);
+}
+
+:root[data-theme="dark"] .nav {
+  background: hsla(225, 25%, 10%, 0.85);
+}
+
+:root[data-theme="dark"] .nav.scrolled {
+  background: hsla(225, 25%, 10%, 0.95);
+}
+
+:root[data-theme="dark"] .welcome-overlay {
+  background: linear-gradient(135deg, hsla(235, 60%, 52%, 0.08) 0%, hsla(260, 60%, 58%, 0.08) 100%),
+              hsl(225, 25%, 10%);
+}
+
+/* Smooth theme transition */
+body,
+.nav,
+.card,
+.day-card,
+.stat-card,
+.dashboard__card,
+.modal,
+.welcome-card,
+.heatmap-container,
+.toast,
+.btn,
+.form-group input,
+.form-group textarea,
+.priority-option,
+.welcome-card__input-wrap input {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 /* ---------- 2. Reset & Base ---------- */
@@ -292,17 +353,47 @@ h4 { font-size: var(--font-size-lg); }
   justify-content: center;
   color: var(--text-secondary);
   transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  position: relative;
+  overflow: hidden;
 }
 
 .nav__theme-btn:hover {
   background: var(--bg-alt);
   color: var(--text);
-  transform: rotate(20deg);
 }
 
 .nav__theme-btn svg {
   width: 20px;
   height: 20px;
+  transition: transform var(--transition-base), opacity var(--transition-base);
+}
+
+.nav__theme-btn .icon-sun {
+  position: absolute;
+}
+
+.nav__theme-btn .icon-moon {
+  position: absolute;
+}
+
+:root[data-theme="dark"] .nav__theme-btn .icon-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0);
+}
+
+:root[data-theme="dark"] .nav__theme-btn .icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+:root:not([data-theme="dark"]) .nav__theme-btn .icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+:root:not([data-theme="dark"]) .nav__theme-btn .icon-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0);
 }
 
 /* ---------- 6. Hero / Motivational Dashboard ---------- */
@@ -821,14 +912,14 @@ h4 { font-size: var(--font-size-lg); }
   gap: var(--space-sm);
   padding: 10px var(--space-sm);
   border-radius: var(--radius-sm);
-  transition: background var(--transition-fast), opacity var(--transition-base), transform var(--transition-fast);
+  transition: background var(--transition-fast), opacity var(--transition-base);
   animation: slideIn 0.3s ease-out;
   position: relative;
+  overflow: visible;
 }
 
 .task-item:hover {
   background: var(--bg-warm);
-  transform: translateX(2px);
 }
 
 .task-item--completed {
@@ -987,22 +1078,32 @@ h4 { font-size: var(--font-size-lg); }
   color: var(--text-tertiary);
 }
 
-/* Task Actions */
+/* Task Actions — absolutely positioned to not steal space from title */
 .task-item__actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity var(--transition-fast);
-  flex-shrink: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-fast), visibility var(--transition-fast);
+  background: var(--card);
+  padding: 3px 4px;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-sm);
+  z-index: 2;
 }
 
 .task-item:hover .task-item__actions {
   opacity: 1;
+  visibility: visible;
 }
 
 .task-action-btn {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
@@ -1993,6 +2094,14 @@ h4 { font-size: var(--font-size-lg); }
 @media (hover: none) and (pointer: coarse) {
   .task-item__actions {
     opacity: 1;
+    visibility: visible;
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
   }
 
   .day-card:hover {

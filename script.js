@@ -1450,8 +1450,68 @@
     console.log('✅ Day Planner v2.0 initialized (user: ' + USERNAME + ')');
   }
 
+  /* ========== DARK MODE TOGGLE ========== */
+  var ThemeManager = {
+    STORAGE_KEY: 'dayplanner_theme',
+
+    /** Initialize theme from localStorage or system preference */
+    init: function () {
+      var saved = localStorage.getItem(this.STORAGE_KEY);
+      if (saved) {
+        this.setTheme(saved, false);
+      } else {
+        // Check system preference
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+          this.setTheme('dark', false);
+        }
+      }
+
+      // Set up toggle button
+      var btn = document.getElementById('theme-btn');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var current = document.documentElement.getAttribute('data-theme');
+          var next = current === 'dark' ? 'light' : 'dark';
+          ThemeManager.setTheme(next, true);
+        });
+      }
+
+      // Listen for system preference changes
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+          if (!localStorage.getItem(ThemeManager.STORAGE_KEY)) {
+            ThemeManager.setTheme(e.matches ? 'dark' : 'light', false);
+          }
+        });
+      }
+    },
+
+    /** Set theme and optionally persist */
+    setTheme: function (theme, persist) {
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+
+      if (persist) {
+        localStorage.setItem(this.STORAGE_KEY, theme);
+      }
+
+      // Update meta theme-color
+      var metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) {
+        metaTheme.setAttribute('content', theme === 'dark' ? '#1a1d2e' : '#4338CA');
+      }
+    }
+  };
+
   /* ========== WELCOME MODAL HANDLER ========== */
   function setupWelcome() {
+    // Initialize theme FIRST (before any rendering)
+    ThemeManager.init();
+
     var overlay = document.getElementById('welcome-overlay');
     var form = document.getElementById('welcome-form');
     var input = document.getElementById('welcome-username');
