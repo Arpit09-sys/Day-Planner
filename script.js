@@ -48,6 +48,11 @@
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
 
+  function getTodayDayKey() {
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    return days[new Date().getDay()];
+  }
+
   function showToast(message, type = 'info') {
     const container = $('#toast-container');
     if (!container) return;

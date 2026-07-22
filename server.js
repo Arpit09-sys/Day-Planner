@@ -1,6 +1,7 @@
 /* ============================================================
    Day Planner — Express + MongoDB Atlas Server (v3.0)
    Supports: Tasks, Plans, Focus, User, Momentum
+   Works both locally (npm run dev) and on Vercel (serverless)
    ============================================================ */
 
 require('dotenv').config();
@@ -8,10 +9,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const dns = require('dns');
-
-// Use Google Public DNS to resolve MongoDB Atlas SRV records
-dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const taskRoutes = require('./routes/tasks');
 const planRoutes = require('./routes/plans');
@@ -22,14 +19,31 @@ const notificationsRoutes = require('./routes/notifications');
 const privacyRoutes = require('./routes/privacy');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 /* ─── Middleware ─── */
 app.use(cors());
 app.use(express.json());
 
-// Serve static frontend files
-app.use(express.static(path.join(__dirname)));
+/* ─── Lazy MongoDB connection (works for both local & serverless) ─── */
+let cachedDb = null;
+async function connectDB() {
+  if (cachedDb && mongoose.connection.readyState === 1) return cachedDb;
+  cachedDb = await mongoose.connect(process.env.MONGODB_URI, { family: 4 });
+  console.log('✅ Connected to MongoDB Atlas');
+  return cachedDb;
+}
+
+// Ensure DB is connected before any API request
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    res.status(500).json({ success: false, message: 'Database connection failed' });
+  }
+});
 
 /* ─── API Routes ─── */
 app.use('/api/tasks', taskRoutes);
@@ -40,29 +54,26 @@ app.use('/api/momentum', momentumRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/privacy', privacyRoutes);
 
-/* ─── Catch-all: serve index.html for any non-API route ─── */
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+/* ─── Local development only: serve static files ─── */
+if (!process.env.VERCEL) {
+  app.use(express.static(path.join(__dirname)));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+  });
+}
 
-/* ─── Connect to MongoDB Atlas & Start Server ─── */
-mongoose
-  .connect(process.env.MONGODB_URI, {
-    family: 4  // Force IPv4 — fixes DNS SRV resolution issues
-  })
-  .then(() => {
-    console.log('✅ Connected to MongoDB Atlas');
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+/* ─── Start server (local only — Vercel handles this automatically) ─── */
+if (!process.env.VERCEL) {
+  connectDB()
+    .then(() => {
       app.listen(PORT, () => {
         console.log(`🚀 Server running at http://localhost:${PORT}`);
       });
-    }
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    })
+    .catch((err) => {
+      console.error('❌ MongoDB connection error:', err.message);
       process.exit(1);
-    }
-  });
+    });
+}
 
 module.exports = app;

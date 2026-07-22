@@ -6,9 +6,29 @@
     {
       "src": "server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "style.css",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "script.js",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "sw.js",
+      "use": "@vercel/static"
     }
   ],
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/server.js" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/server.js" },
+    { "src": "/sw.js", "dest": "/sw.js" },
+    { "src": "/style.css", "dest": "/style.css" },
+    { "src": "/script.js", "dest": "/script.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
