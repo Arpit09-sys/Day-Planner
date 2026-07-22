@@ -1074,7 +1074,10 @@
     }
   };
 
-  /* ========== 8. INITIALIZE ========== */
-  document.addEventListener('DOMContentLoaded', () => Logic.init());
-
+  /* ========== 7. INITIALIZATION ========== */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => Logic.init());
+  } else {
+    Logic.init();
+  }
 })();
