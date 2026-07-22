@@ -18,6 +18,8 @@ const planRoutes = require('./routes/plans');
 const focusRoutes = require('./routes/focus');
 const userRoutes = require('./routes/user');
 const momentumRoutes = require('./routes/momentum');
+const notificationsRoutes = require('./routes/notifications');
+const privacyRoutes = require('./routes/privacy');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,6 +37,8 @@ app.use('/api/plans', planRoutes);
 app.use('/api/focus', focusRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/momentum', momentumRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/privacy', privacyRoutes);
 
 /* ─── Catch-all: serve index.html for any non-API route ─── */
 app.get('*', (req, res) => {

@@ -35,6 +35,9 @@
             <span id="nav-time-text">—</span>
           </div>
         </div>
+        <button class="nav__btn" id="settings-btn" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button class="nav__btn" id="theme-btn" aria-label="Toggle theme" title="Toggle theme">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -343,6 +346,49 @@
         <button type="submit" class="btn btn--primary">Save & Sync</button>
       </div>
     </form>
+  </div>
+
+  <!-- ===== Settings Modal ===== -->
+  <div class="modal-backdrop" id="settings-backdrop"></div>
+  <div class="modal" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal__header">
+      <h3 class="modal__title" id="settings-title">Settings & Privacy</h3>
+      <button class="modal__close" id="settings-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    
+    <div class="settings-section">
+      <h4>Notifications</h4>
+      <p style="font-size:var(--fs-sm);color:var(--text-secondary);margin-bottom:var(--sp-4);">Choose how you want to be reminded. We only send one check-in per day.</p>
+      
+      <label class="setting-toggle">
+        <input type="checkbox" id="setting-push">
+        <span>Enable Browser Push Notifications</span>
+      </label>
+      
+      <label class="setting-toggle" style="margin-top:var(--sp-2);">
+        <input type="checkbox" id="setting-email-toggle">
+        <span>Enable Email Reminders</span>
+      </label>
+      <div class="form-group" id="setting-email-group" style="display:none;margin-top:var(--sp-2);">
+        <input type="email" id="setting-email-input" placeholder="your@email.com">
+      </div>
+      
+      <div style="margin-top:var(--sp-4);">
+        <button class="btn btn--secondary btn--sm" id="btn-test-notification">Send Test Notification</button>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:var(--sp-6);border-top:1px solid var(--border-color);padding-top:var(--sp-6);">
+      <h4>Privacy & Data</h4>
+      <p style="font-size:var(--fs-sm);color:var(--text-secondary);margin-bottom:var(--sp-4);">You own your data. Export it or delete it completely.</p>
+      
+      <div style="display:flex; gap:var(--sp-3);">
+        <button class="btn btn--secondary" id="btn-export-data">Export Data (JSON)</button>
+        <button class="btn btn--secondary" style="color:var(--urgent-color); border-color:var(--urgent-color);" id="btn-delete-account">Delete Account</button>
+      </div>
+    </div>
   </div>
 
   <!-- ===== Toast ===== -->

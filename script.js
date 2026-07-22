@@ -971,10 +971,95 @@
       });
       $('#reflection-save').addEventListener('click', () => this.saveReflection());
 
+      // Settings Flow
+      $('#settings-btn').addEventListener('click', () => {
+         $('#settings-modal').classList.add('active');
+         $('#settings-backdrop').classList.add('active');
+      });
+      $('#settings-close').addEventListener('click', () => {
+         $('#settings-modal').classList.remove('active');
+         $('#settings-backdrop').classList.remove('active');
+      });
+      $('#settings-backdrop').addEventListener('click', () => {
+         $('#settings-modal').classList.remove('active');
+         $('#settings-backdrop').classList.remove('active');
+      });
+
+      $('#setting-push').addEventListener('change', async (e) => {
+         if (e.target.checked) {
+           await SettingsLogic.subscribeToPush();
+         }
+      });
+
+      $('#btn-test-notification').addEventListener('click', async () => {
+         if (!USERNAME || USERNAME === 'User') return showToast('Please sync your name first.');
+         const res = await Api.request('POST', '/notifications/test', { username: USERNAME });
+         if (res.success) showToast('Test notifications sent!');
+         else showToast('Failed to send notifications.');
+      });
+
+      $('#btn-export-data').addEventListener('click', () => {
+         if (!USERNAME || USERNAME === 'User') return showToast('No data to export locally.');
+         window.open(`${API_BASE}/privacy/export/${USERNAME}`, '_blank');
+      });
+
+      $('#btn-delete-account').addEventListener('click', async () => {
+         if (!confirm("Are you sure? This will delete all your tasks, plans, and momentum. This cannot be undone.")) return;
+         if (USERNAME && USERNAME !== 'User') {
+            const res = await Api.request('DELETE', `/privacy/delete/${USERNAME}`);
+            if (!res.success) return showToast('Failed to delete account.');
+         }
+         localStorage.clear();
+         window.location.reload();
+      });
+
+
     }
   };
 
-  /* ========== 7. INITIALIZE ========== */
+  /* ========== 7. SETTINGS & PUSH LOGIC ========== */
+  const SettingsLogic = {
+    subscribeToPush: async function() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('Push notifications are not supported by your browser.');
+        return;
+      }
+
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array('BOLLqdZOEA2laemrjZ3AOMqUs_a42ieia30NO5m6ymAvSKc1F8xtAhgezFPbVCLpd9xA3oikkSyS-9lrcVaSL14')
+        });
+
+        if (USERNAME && USERNAME !== 'User') {
+          await Api.request('POST', '/notifications/subscribe', {
+            username: USERNAME,
+            subscription
+          });
+          showToast('Push notifications enabled!', 'success');
+        } else {
+          showToast('Please sync your name first to enable push.');
+        }
+      } catch (err) {
+        console.error('Failed to subscribe:', err);
+        showToast('Failed to enable push notifications.');
+        $('#setting-push').checked = false;
+      }
+    },
+    urlBase64ToUint8Array: function(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+  };
+
+  /* ========== 8. INITIALIZE ========== */
   document.addEventListener('DOMContentLoaded', () => Logic.init());
 
 })();

@@ -54,7 +54,8 @@ const userSchema = new mongoose.Schema(
       maxDailyReminders: { type: Number, default: 3 },
       browserPush: { type: Boolean, default: false },
       emailReminders: { type: Boolean, default: false },
-      pauseAll: { type: Boolean, default: false }
+      pauseAll: { type: Boolean, default: false },
+      pushSubscription: { type: mongoose.Schema.Types.Mixed }
     }
   },
   {
