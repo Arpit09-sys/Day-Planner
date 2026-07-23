@@ -1,4 +1,5 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "framework": null,
   "installCommand": "npm install",
@@ -22,13 +23,24 @@
     {
       "src": "sw.js",
       "use": "@vercel/static"
+    },
+    {
+      "src": "icon.svg",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/server.js" },
     { "src": "/sw.js", "dest": "/sw.js" },
+    { "src": "/icon.svg", "dest": "/icon.svg" },
     { "src": "/style.css", "dest": "/style.css" },
     { "src": "/script.js", "dest": "/script.js" },
     { "src": "/(.*)", "dest": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/notifications/cron/reminders",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }

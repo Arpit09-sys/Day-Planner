@@ -9,6 +9,13 @@ const userSchema = new mongoose.Schema(
       unique: true,
       index: true
     },
+    // A one-way hash of the account's sync code. It is intentionally excluded
+    // from normal queries and API responses.
+    syncSecretHash: {
+      type: String,
+      default: '',
+      select: false
+    },
     displayName: {
       type: String,
       trim: true,
@@ -18,7 +25,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      default: ''
+      default: '',
+      validate: {
+        validator: (value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+        message: 'Please enter a valid email address.'
+      }
     },
     timezone: {
       type: String,
@@ -54,6 +65,9 @@ const userSchema = new mongoose.Schema(
       maxDailyReminders: { type: Number, default: 3 },
       browserPush: { type: Boolean, default: false },
       emailReminders: { type: Boolean, default: false },
+      emailReminderTime: { type: String, default: '08:30' },
+      lastEmailReminderKey: { type: String, default: '' },
+      lastEmailReminderAt: { type: Date, default: null },
       pauseAll: { type: Boolean, default: false },
       pushSubscription: { type: mongoose.Schema.Types.Mixed }
     }

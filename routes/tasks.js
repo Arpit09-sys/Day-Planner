@@ -1,22 +1,24 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Task = require('../models/Task');
+const { requireCurrentUser } = require('../lib/auth');
 
 /* ─── POST /api/tasks ─── Create a new task ─── */
 router.post('/', async (req, res) => {
   try {
-    const { username, day, date, title, time, priority, notes, order,
+    const { day, date, title, time, priority, notes, order,
             category, estimatedMinutes, scheduledTime, status } = req.body;
 
-    if (!username || !title) {
-      return res.status(400).json({ success: false, message: 'username and title are required' });
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ success: false, message: 'A task title is required' });
     }
     if (!day && !date) {
       return res.status(400).json({ success: false, message: 'day or date is required' });
     }
 
     const task = await Task.create({
-      username, title,
+      username: req.user.username, title: String(title).trim(),
       day: day || null,
       date: date || '',
       time: time || '',
@@ -40,6 +42,7 @@ router.post('/', async (req, res) => {
 /* ─── GET /api/tasks/:username ─── Fetch tasks ─── */
 router.get('/:username', async (req, res) => {
   try {
+    if (!requireCurrentUser(req, res, req.params.username)) return;
     const query = { username: req.params.username };
     if (req.query.date) query.date = req.query.date;
     const tasks = await Task.find(query).sort({ date: 1, day: 1, order: 1 });
@@ -53,6 +56,7 @@ router.get('/:username', async (req, res) => {
 /* ─── PUT /api/tasks/reset/:username ─── Reset all ─── */
 router.put('/reset/:username', async (req, res) => {
   try {
+    if (!requireCurrentUser(req, res, req.params.username)) return;
     await Task.updateMany(
       { username: req.params.username },
       { $set: { completed: false, completedAt: null, status: 'planned' } }
@@ -67,6 +71,9 @@ router.put('/reset/:username', async (req, res) => {
 /* ─── PUT /api/tasks/:taskId ─── Update a task ─── */
 router.put('/:taskId', async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.taskId)) {
+      return res.status(400).json({ success: false, message: 'Invalid task id' });
+    }
     const updates = {};
     const allowed = [
       'title', 'time', 'priority', 'notes', 'completed', 'order', 'day',
@@ -87,7 +94,7 @@ router.put('/:taskId', async (req, res) => {
       if (!req.body.status) updates.status = 'planned';
     }
 
-    const task = await Task.findByIdAndUpdate(req.params.taskId, updates, {
+    const task = await Task.findOneAndUpdate({ _id: req.params.taskId, username: req.user.username }, updates, {
       new: true, runValidators: true
     });
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
@@ -102,7 +109,10 @@ router.put('/:taskId', async (req, res) => {
 /* ─── DELETE /api/tasks/:taskId ─── */
 router.delete('/:taskId', async (req, res) => {
   try {
-    const task = await Task.findByIdAndDelete(req.params.taskId);
+    if (!mongoose.isValidObjectId(req.params.taskId)) {
+      return res.status(400).json({ success: false, message: 'Invalid task id' });
+    }
+    const task = await Task.findOneAndDelete({ _id: req.params.taskId, username: req.user.username });
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
     res.json({ success: true, message: 'Task deleted' });
   } catch (err) {

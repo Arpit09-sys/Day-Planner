@@ -4,12 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Day Planner — A calm, habit-building daily planning companion. Plan today. Focus. Reflect.">
-  <meta name="theme-color" content="#7C5CFC">
+  <meta name="theme-color" content="#2F6F68">
   <title>Day Planner — Plan · Focus · Reflect</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=4.1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3.3">
+  <link rel="stylesheet" href="style.css?v=4.2">
 </head>
 <body>
 
@@ -195,7 +196,7 @@
   </div>
 
   <!-- ===== Focus Mode ===== -->
-  <div class="focus-overlay" id="focus-overlay">
+  <div class="focus-overlay" id="focus-overlay" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="focus-task-name">
     <div class="focus-view">
       <div class="focus-view__task" id="focus-task-name">Task name</div>
       <div class="duration-picker" id="duration-picker">
@@ -326,24 +327,35 @@
     </form>
   </div>
 
-  <!-- ===== Sync prompt (deferred) ===== -->
+  <!-- ===== Secure sync prompt ===== -->
   <div class="modal-backdrop" id="sync-backdrop"></div>
-  <div class="modal" id="sync-modal" role="dialog" aria-modal="true">
+  <div class="modal sync-modal" id="sync-modal" role="dialog" aria-modal="true" aria-labelledby="sync-title">
     <div class="modal__header">
-      <h3 class="modal__title">Save your plan</h3>
+      <h3 class="modal__title" id="sync-title">Sync your plans</h3>
       <button class="modal__close" id="sync-close" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <p style="color:var(--text-secondary);margin-bottom:var(--sp-6);line-height:1.6;">Save your plan and sync it across devices. Your name is only used to identify your tasks.</p>
+    <p class="sync-modal__intro">Use the same username and private sync code on your phone and laptop. Your plans stay tied to your account—not just a public name.</p>
+    <div class="account-mode" role="tablist" aria-label="Sync account action">
+      <button class="account-mode__button active" type="button" data-account-mode="register" role="tab" aria-selected="true">Create account</button>
+      <button class="account-mode__button" type="button" data-account-mode="login" role="tab" aria-selected="false">Sign in</button>
+    </div>
     <form id="sync-form">
       <div class="form-group">
-        <label for="sync-username">Your name</label>
-        <input type="text" id="sync-username" placeholder="Enter your name" required autocomplete="off" minlength="2" maxlength="30">
+        <label for="sync-username">Username</label>
+        <input type="text" id="sync-username" placeholder="e.g. arpit-plans" required autocomplete="username" minlength="3" maxlength="30" pattern="[a-z0-9][a-z0-9_-]{2,29}">
+        <p class="form-hint">3–30 lowercase letters, numbers, hyphens, or underscores.</p>
       </div>
+      <div class="form-group">
+        <label for="sync-code">Private sync code</label>
+        <input type="password" id="sync-code" placeholder="At least 6 characters" required autocomplete="current-password" minlength="6" maxlength="128">
+        <p class="form-hint" id="sync-code-hint">Keep it private. You will use it to connect another device.</p>
+      </div>
+      <p class="form-error" id="sync-error" role="alert" hidden></p>
       <div class="modal__actions">
-        <button type="button" class="btn btn--ghost" id="sync-skip">Continue without sync</button>
-        <button type="submit" class="btn btn--primary">Save & Sync</button>
+        <button type="button" class="btn btn--ghost" id="sync-skip">Use this device only</button>
+        <button type="submit" class="btn btn--primary" id="sync-submit">Create & Sync</button>
       </div>
     </form>
   </div>
@@ -357,10 +369,19 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
+
+    <div class="settings-section" id="account-settings">
+      <h4>Sync account</h4>
+      <p class="settings-copy" id="sync-status">This device is storing plans locally.</p>
+      <div class="settings-actions">
+        <button class="btn btn--secondary btn--sm" id="btn-open-sync">Set up sync</button>
+        <button class="btn btn--ghost btn--sm" id="btn-disconnect" hidden>Disconnect this device</button>
+      </div>
+    </div>
     
-    <div class="settings-section">
+    <div class="settings-section settings-section--divided">
       <h4>Notifications</h4>
-      <p style="font-size:var(--fs-sm);color:var(--text-secondary);margin-bottom:var(--sp-4);">Choose how you want to be reminded. We only send one check-in per day.</p>
+      <p class="settings-copy">Choose one gentle daily check-in. You can pause it at any time.</p>
       
       <label class="setting-toggle">
         <input type="checkbox" id="setting-push">
@@ -371,20 +392,28 @@
         <input type="checkbox" id="setting-email-toggle">
         <span>Enable Email Reminders</span>
       </label>
-      <div class="form-group" id="setting-email-group" style="display:none;margin-top:var(--sp-2);">
-        <input type="email" id="setting-email-input" placeholder="your@email.com">
+      <div class="notification-email-fields" id="setting-email-group" hidden>
+        <div class="form-group">
+          <label for="setting-email-input">Email address</label>
+          <input type="email" id="setting-email-input" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="setting-email-time">Reminder time</label>
+          <input type="time" id="setting-email-time" value="08:30">
+        </div>
       </div>
       
-      <div style="margin-top:var(--sp-4);">
+      <div class="settings-actions">
+        <button class="btn btn--primary btn--sm" id="btn-save-notifications">Save notification settings</button>
         <button class="btn btn--secondary btn--sm" id="btn-test-notification">Send Test Notification</button>
       </div>
     </div>
 
-    <div class="settings-section" style="margin-top:var(--sp-6);border-top:1px solid var(--border);padding-top:var(--sp-6);">
+    <div class="settings-section settings-section--divided">
       <h4>Privacy & Data</h4>
-      <p style="font-size:var(--fs-sm);color:var(--text-secondary);margin-bottom:var(--sp-4);">You own your data. Export it or delete it completely.</p>
+      <p class="settings-copy">You own your data. Export it or delete it completely.</p>
       
-      <div style="display:flex; gap:var(--sp-3);">
+      <div class="settings-actions">
         <button class="btn btn--secondary" id="btn-export-data">Export Data (JSON)</button>
         <button class="btn btn--secondary" style="color:var(--coral); border-color:var(--coral);" id="btn-delete-account">Delete Account</button>
       </div>
@@ -396,6 +425,6 @@
 
   <!-- ===== Footer ===== -->
   <footer class="footer"><div class="container"><p>Day Planner v3.0 — Plan · Focus · Reflect</p></div></footer>
-  <script src="script.js?v=3.3"></script>
+  <script src="script.js?v=4.2"></script>
 </body>
 </html>

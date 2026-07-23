@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Day Planner">
+  <rect width="64" height="64" rx="18" fill="#2F6F68"/>
+  <rect x="16" y="17" width="32" height="33" rx="5" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M16 28h32M24 12v10M40 12v10M24 37l5 5 11-12" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+</svg>

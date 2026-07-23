@@ -5,34 +5,49 @@
 
 (function () {
   'use strict';
-  window.onerror = function(msg, url, lineNo, columnNo, error) {
-     alert("Error: " + msg + "\nLine: " + lineNo + "\nCol: " + columnNo + "\n" + (error ? error.stack : ''));
-     return false;
-  };
-  window.addEventListener('unhandledrejection', function(event) {
-     alert("Unhandled Promise Rejection: " + event.reason);
-  });
+  // Keep unexpected errors in the console instead of interrupting a planning
+  // session with browser alert boxes.
+  window.addEventListener('error', (event) => console.error('Day Planner error:', event.error || event.message));
+  window.addEventListener('unhandledrejection', (event) => console.error('Day Planner request failed:', event.reason));
 
   /* ========== 1. STATE & CONSTANTS ========== */
   const API_BASE = window.location.origin + '/api';
   const STORAGE_KEY_USER = 'dayplanner_username';
+  const STORAGE_KEY_SESSION = 'dayplanner_session';
   const STORAGE_KEY_THEME = 'dayplanner_theme';
   const STORAGE_KEY_OFFLINE = 'dayplanner_offline_tasks';
+  const STORAGE_KEY_ONBOARDED = 'dayplanner_onboarded';
 
-  let USERNAME = localStorage.getItem(STORAGE_KEY_USER) || '';
-  let CURRENT_DATE = new Date().toISOString().split('T')[0];
+  function readSession() {
+    try {
+      const session = JSON.parse(localStorage.getItem(STORAGE_KEY_SESSION) || 'null');
+      return session && session.username && session.token ? session : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  const savedSession = readSession();
+  const LEGACY_USERNAME = localStorage.getItem(STORAGE_KEY_USER) || '';
+  let USERNAME = savedSession?.username || '';
+  let AUTH_TOKEN = savedSession?.token || '';
+  let CURRENT_DATE = getTodayStr();
 
   let state = {
     tasks: [],
     momentum: { daysCaredFor: 0, events: [] },
     plan: null,
+    user: savedSession?.user || null,
+    accountMode: 'register',
+    rendererStarted: false,
     focus: {
       active: false,
       taskId: null,
       duration: 25,
       remaining: 25 * 60,
       timerId: null,
-      sessionId: null
+      sessionId: null,
+      sessionClosed: false
     }
   };
 
@@ -49,9 +64,33 @@
     return 'tmp_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
+  function isSynced() {
+    return Boolean(USERNAME && AUTH_TOKEN);
+  }
+
+  function persistSession(user, token) {
+    USERNAME = user.username;
+    AUTH_TOKEN = token;
+    state.user = user;
+    localStorage.setItem(STORAGE_KEY_USER, USERNAME);
+    localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify({ username: USERNAME, token, user }));
+  }
+
+  function clearSession() {
+    USERNAME = '';
+    AUTH_TOKEN = '';
+    state.user = null;
+    localStorage.removeItem(STORAGE_KEY_SESSION);
+    localStorage.removeItem(STORAGE_KEY_USER);
+  }
+
+  function toLocalDateKey(date) {
+    const tzOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - tzOffset).toISOString().split('T')[0];
+  }
+
   function getTodayStr() {
-    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+    return toLocalDateKey(new Date());
   }
 
   function formatTime(minutes) {
@@ -79,7 +118,10 @@
       icon = `<div class="toast__icon toast__icon--info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>`;
     }
 
-    toast.innerHTML = `${icon} <span>${message}</span>`;
+    toast.innerHTML = icon;
+    const copy = document.createElement('span');
+    copy.textContent = message;
+    toast.appendChild(copy);
     container.appendChild(toast);
 
     setTimeout(() => {
@@ -125,56 +167,115 @@
 
       const meta = $('meta[name="theme-color"]');
       if (meta) {
-        meta.setAttribute('content', theme === 'dark' ? '#1a1d2e' : '#4338CA');
+        meta.setAttribute('content', theme === 'dark' ? '#151A18' : '#2F6F68');
       }
     }
   };
 
   /* ========== 4. API SERVICE ========== */
   const Api = {
+    getOfflineQueue: function() {
+      try {
+        const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_OFFLINE) || '[]');
+        return Array.isArray(queue) ? queue : [];
+      } catch (_) {
+        return [];
+      }
+    },
     request: async function(method, endpoint, data = null) {
-      if (!USERNAME && method !== 'GET') {
+      const isAccountRequest = endpoint === '/user/register' || endpoint === '/user/login';
+      if (!isSynced() && method !== 'GET' && !isAccountRequest) {
         this.saveOffline(method, endpoint, data);
-        return { success: true, data: data || {} }; 
+        return { success: true, data: data || {}, offline: true };
       }
       
       const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
       };
+      if (AUTH_TOKEN) options.headers.Authorization = `Bearer ${AUTH_TOKEN}`;
       if (data) options.body = JSON.stringify(data);
 
       try {
         const response = await fetch(`${API_BASE}${endpoint}`, options);
-        if (!response.ok) throw new Error('API Error');
-        return await response.json();
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          return { success: false, status: response.status, message: result.message || 'Request failed.' };
+        }
+        return result;
       } catch (err) {
         console.warn('Network request failed, saving offline.', err);
-        if (method !== 'GET') this.saveOffline(method, endpoint, data);
-        return { success: false, error: err };
+        if (method !== 'GET' && !isAccountRequest) this.saveOffline(method, endpoint, data);
+        return { success: false, error: err, message: 'You appear to be offline. Your changes will sync when you reconnect.' };
       }
     },
     saveOffline: function(method, endpoint, data) {
-      let offline = JSON.parse(localStorage.getItem(STORAGE_KEY_OFFLINE) || '[]');
+      const offline = this.getOfflineQueue();
       offline.push({ method, endpoint, data, timestamp: Date.now() });
       localStorage.setItem(STORAGE_KEY_OFFLINE, JSON.stringify(offline));
     },
+    applyOfflineTaskChanges: function(baseTasks = []) {
+      const tasks = baseTasks.map((task) => ({ ...task }));
+      const findTaskIndex = (id) => tasks.findIndex((task) => task._id === id || task.tempId === id);
+
+      this.getOfflineQueue().forEach((request) => {
+        if (request.endpoint === '/tasks' && request.method === 'POST' && request.data?.title) {
+          const temporaryId = request.data.tempId || generateId();
+          if (findTaskIndex(temporaryId) === -1) {
+            tasks.push({ ...request.data, tempId: temporaryId });
+          }
+          return;
+        }
+
+        const taskMatch = request.endpoint?.match(/^\/tasks\/([^/]+)$/);
+        if (!taskMatch) return;
+        const taskIndex = findTaskIndex(taskMatch[1]);
+        if (request.method === 'PUT' && taskIndex !== -1) {
+          tasks[taskIndex] = { ...tasks[taskIndex], ...(request.data || {}) };
+        }
+        if (request.method === 'DELETE' && taskIndex !== -1) {
+          tasks.splice(taskIndex, 1);
+        }
+      });
+
+      return tasks;
+    },
     syncOffline: async function() {
-      if (!USERNAME) return;
-      let offline = JSON.parse(localStorage.getItem(STORAGE_KEY_OFFLINE) || '[]');
+      if (!isSynced()) return;
+      const offline = this.getOfflineQueue();
       if (offline.length === 0) return;
 
-      for (let req of offline) {
-        if (req.data) req.data.username = USERNAME; 
+      const pending = [];
+      const taskIdMap = new Map();
+      for (const queuedRequest of offline) {
+        const req = { ...queuedRequest, data: queuedRequest.data ? { ...queuedRequest.data } : null };
+        if (req.data?.tempId && taskIdMap.has(req.data.tempId)) req.data.tempId = taskIdMap.get(req.data.tempId);
+        for (const [temporaryId, serverId] of taskIdMap.entries()) {
+          req.endpoint = req.endpoint.replace(temporaryId, serverId);
+        }
         try {
-          await fetch(`${API_BASE}${req.endpoint}`, {
+          const response = await fetch(`${API_BASE}${req.endpoint}`, {
             method: req.method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.data)
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AUTH_TOKEN}` },
+            ...(req.data ? { body: JSON.stringify(req.data) } : {})
           });
-        } catch (e) { console.error('Sync failed', e); }
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result.success === false) {
+            pending.push(queuedRequest);
+            continue;
+          }
+          if (req.method === 'POST' && req.endpoint === '/tasks' && queuedRequest.data?.tempId && result.data?._id) {
+            taskIdMap.set(queuedRequest.data.tempId, result.data._id);
+            const taskIndex = state.tasks.findIndex((task) => task.tempId === queuedRequest.data.tempId);
+            if (taskIndex !== -1) state.tasks[taskIndex] = result.data;
+          }
+        } catch (error) {
+          console.error('Offline sync failed', error);
+          pending.push(queuedRequest);
+        }
       }
-      localStorage.removeItem(STORAGE_KEY_OFFLINE);
+      localStorage.setItem(STORAGE_KEY_OFFLINE, JSON.stringify(pending));
+      if (pending.length === 0) localStorage.removeItem(STORAGE_KEY_OFFLINE);
     }
   };
 
@@ -182,7 +283,19 @@
   const Renderer = {
     init: function() {
       this.updateDateTime();
-      setInterval(() => this.updateDateTime(), 60000);
+      if (!state.rendererStarted) {
+        setInterval(() => {
+          const today = getTodayStr();
+          if (today !== CURRENT_DATE) {
+            CURRENT_DATE = today;
+            this.renderTasks();
+            this.renderNowCard();
+            this.renderWeekGrid();
+          }
+          this.updateDateTime();
+        }, 60000);
+        state.rendererStarted = true;
+      }
       this.renderTasks();
       this.renderNowCard();
       this.renderWeekGrid();
@@ -202,7 +315,8 @@
         let greeting = 'Good evening';
         if (hour < 12) greeting = 'Good morning';
         else if (hour < 17) greeting = 'Good afternoon';
-        $('#greeting-text').textContent = `${greeting}${USERNAME ? ', ' + USERNAME : '.'}`;
+        const name = state.user?.displayName || USERNAME;
+        $('#greeting-text').textContent = `${greeting}${name ? ', ' + name : '.'}`;
       }
     },
     renderTasks: function() {
@@ -285,7 +399,7 @@
       const container = $('#now-card-container');
       if (!container) return;
 
-      const todayTasks = state.tasks.filter(t => t.date === CURRENT_DATE && !t.completed);
+      const todayTasks = state.tasks.filter(t => (t.date === CURRENT_DATE || (!t.date && t.day === getTodayDayKey())) && !t.completed);
       const nowTask = todayTasks.find(t => t.status === 'in_progress') || todayTasks[0];
 
       if (nowTask) {
@@ -363,7 +477,7 @@
         d.setDate(monday.getDate() + i);
         if (i===6) endOfWeek = d;
 
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = toLocalDateKey(d);
         const isToday = dateStr === CURRENT_DATE;
 
         const col = document.createElement('div');
@@ -463,18 +577,79 @@
   const Logic = {
     init: async function() {
       ThemeManager.init();
-      
-      if (!USERNAME) {
-        this.showOnboarding();
-      } else {
-        await Api.syncOffline();
-        await this.loadData();
-        this.startApp();
-      }
-      
+      this.resetTransientUi();
       this.setupEventListeners();
+
+      if (isSynced()) {
+        const profile = await this.loadProfile();
+        if (profile.success) {
+          await Api.syncOffline();
+          await this.loadData();
+          this.startApp();
+          return;
+        }
+
+        // An expired token needs a new sign-in. A temporary network issue does
+        // not sign the person out or erase their local work.
+        if (profile.status === 401 || profile.status === 404) clearSession();
+      }
+
+      // People upgrading from the old name-only experience should not be sent
+      // through the welcome screen again just because they now need a secure
+      // sync code.
+      if (!localStorage.getItem(STORAGE_KEY_ONBOARDED) && LEGACY_USERNAME) {
+        localStorage.setItem(STORAGE_KEY_ONBOARDED, '1');
+      }
+
+      if (localStorage.getItem(STORAGE_KEY_ONBOARDED)) {
+        state.tasks = Api.applyOfflineTaskChanges();
+        this.startApp();
+      } else {
+        this.showOnboarding();
+      }
     },
-    
+
+    resetTransientUi: function() {
+      if (state.focus.timerId) clearInterval(state.focus.timerId);
+      state.focus = {
+        active: false,
+        taskId: null,
+        duration: 25,
+        remaining: 25 * 60,
+        timerId: null,
+        sessionId: null,
+        sessionClosed: false
+      };
+      const focusOverlay = $('#focus-overlay');
+      if (focusOverlay) {
+        focusOverlay.classList.remove('active');
+        focusOverlay.setAttribute('aria-hidden', 'true');
+      }
+      $('#reflection-overlay')?.classList.remove('active');
+    },
+
+    loadProfile: async function() {
+      const result = await Api.request('GET', '/user/me');
+      if (result.success && result.data) persistSession(result.data, AUTH_TOKEN);
+      return result;
+    },
+
+    setAccountMode: function(mode) {
+      state.accountMode = mode === 'login' ? 'login' : 'register';
+      $$('[data-account-mode]').forEach((button) => {
+        const active = button.dataset.accountMode === state.accountMode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      const isLogin = state.accountMode === 'login';
+      $('#sync-title').textContent = isLogin ? 'Connect this device' : 'Sync your plans';
+      $('#sync-submit').textContent = isLogin ? 'Sign in & Sync' : 'Create & Sync';
+      $('#sync-code').setAttribute('autocomplete', isLogin ? 'current-password' : 'new-password');
+      $('#sync-code-hint').textContent = isLogin
+        ? 'Enter the private sync code you used on your other device.'
+        : 'Keep it private. You will use it to connect another device.';
+    },
+
     showOnboarding: function() {
       const welcome = $('#welcome');
       const app = $('#app');
@@ -498,7 +673,7 @@
            const p3 = $('#priority-3');
            
            if(type === 'deep-work') {
-             p1.value = 'Deep work session (90m)'; p2.value = 'Review PRs'; p3.value = 'Reply to urgent emails';
+             p1.value = 'Deep work session (90m)'; p2.value = 'Review priorities'; p3.value = 'Reply to urgent emails';
            } else if(type === 'study') {
              p1.value = 'Read Chapter 4'; p2.value = 'Summarize notes'; p3.value = 'Review flashcards';
            } else if(type === 'workout') {
@@ -517,68 +692,37 @@
            $('#priority-1').value.trim(),
            $('#priority-2').value.trim(),
            $('#priority-3').value.trim()
-         ].filter(t => t);
+         ].filter(Boolean);
          
-         if (tasks.length > 0) {
-           for (let title of tasks) {
-             await this.addTask({ title, date: CURRENT_DATE, priority: 'high' });
-           }
-           this.recordMomentum('plan_created');
+         for (const title of tasks) {
+           await this.addTask({ title, date: CURRENT_DATE, priority: 'high' });
          }
-         
+         if (tasks.length > 0) this.recordMomentum('plan_created');
          this.finishOnboarding();
-      });
+      }, { once: true });
 
-      $('#welcome-skip').addEventListener('click', () => {
-         this.finishOnboarding();
-      });
+      $('#welcome-skip').addEventListener('click', () => this.finishOnboarding(), { once: true });
     },
 
     finishOnboarding: function() {
+      localStorage.setItem(STORAGE_KEY_ONBOARDED, '1');
       $('#welcome').classList.add('hidden');
-      this.showSyncPrompt();
+      this.startApp();
+      this.showSyncPrompt('register');
     },
 
-    showSyncPrompt: function() {
+    showSyncPrompt: function(mode = 'register') {
+       this.setAccountMode(mode);
        const syncModal = $('#sync-modal');
        const backdrop = $('#sync-backdrop');
+       $('#sync-error').hidden = true;
+       $('#sync-error').textContent = '';
+       if (!$('#sync-username').value && (USERNAME || LEGACY_USERNAME)) {
+         $('#sync-username').value = String(USERNAME || LEGACY_USERNAME).trim().toLowerCase();
+       }
        syncModal.classList.add('active');
        backdrop.classList.add('active');
-
-       $('#sync-form').addEventListener('submit', async (e) => {
-         e.preventDefault();
-         
-         const btn = e.target.querySelector('button[type="submit"]');
-         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-
-         const name = $('#sync-username').value.trim();
-         if(name) {
-           USERNAME = name;
-           localStorage.setItem(STORAGE_KEY_USER, USERNAME);
-           try {
-             await Api.request('POST', '/user', { username: USERNAME, displayName: USERNAME });
-             await Api.syncOffline();
-           } catch (err) {
-             console.error(err);
-           }
-         }
-         this.closeSyncPrompt();
-         this.startApp();
-       });
-
-       $('#sync-skip').addEventListener('click', () => {
-         USERNAME = 'User'; // Local only placeholder
-         localStorage.setItem(STORAGE_KEY_USER, USERNAME); // MUST save to prevent onboarding reappearing
-         this.closeSyncPrompt();
-         this.startApp();
-       }, { once: true });
-       
-       $('#sync-close').addEventListener('click', () => {
-         USERNAME = 'User';
-         localStorage.setItem(STORAGE_KEY_USER, USERNAME); // MUST save to prevent onboarding reappearing
-         this.closeSyncPrompt();
-         this.startApp();
-       }, { once: true });
+       setTimeout(() => $('#sync-username').focus(), 100);
     },
 
     closeSyncPrompt: function() {
@@ -586,26 +730,145 @@
        $('#sync-backdrop').classList.remove('active');
     },
 
+    submitSyncAccount: async function() {
+      const username = $('#sync-username').value.trim().toLowerCase();
+      const syncCode = $('#sync-code').value;
+      const error = $('#sync-error');
+      const submit = $('#sync-submit');
+      error.hidden = true;
+
+      if (!/^[a-z0-9][a-z0-9_-]{2,29}$/.test(username)) {
+        error.textContent = 'Use a username with 3–30 lowercase letters, numbers, hyphens, or underscores.';
+        error.hidden = false;
+        return;
+      }
+      if (syncCode.length < 6) {
+        error.textContent = 'Your private sync code must be at least 6 characters.';
+        error.hidden = false;
+        return;
+      }
+
+      submit.disabled = true;
+      const originalLabel = submit.textContent;
+      submit.textContent = state.accountMode === 'login' ? 'Signing in…' : 'Creating…';
+      const endpoint = state.accountMode === 'login' ? '/user/login' : '/user/register';
+      const result = await Api.request('POST', endpoint, {
+        username,
+        syncCode,
+        displayName: username,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      });
+      submit.disabled = false;
+      submit.textContent = originalLabel;
+
+      if (!result.success || !result.token || !result.data) {
+        error.textContent = result.message || 'We could not connect this account. Please try again.';
+        error.hidden = false;
+        return;
+      }
+
+      persistSession(result.data, result.token);
+      $('#sync-code').value = '';
+      await Api.syncOffline();
+      await this.loadData();
+      this.startApp();
+      this.closeSyncPrompt();
+      showToast(result.claimedLegacyAccount ? 'Your existing plans are now protected and synced.' : 'This device is now synced.', 'success');
+    },
+
     startApp: function() {
+      $('#welcome')?.classList.add('hidden');
       $('#app').classList.add('active');
       Renderer.init();
+      this.populateSettings();
     },
 
     loadData: async function() {
-      if(!USERNAME) return;
-      
+      if(!isSynced()) return;
       const [tasksRes, momentumRes] = await Promise.all([
         Api.request('GET', `/tasks/${USERNAME}`),
         Api.request('GET', `/momentum/${USERNAME}?days=30`)
       ]);
 
       if (tasksRes.success && tasksRes.data) {
-        state.tasks = tasksRes.data;
+        state.tasks = Api.applyOfflineTaskChanges(tasksRes.data);
       }
       
       if (momentumRes.success && momentumRes.data) {
         state.momentum = momentumRes.data;
       }
+    },
+
+    populateSettings: function() {
+      const signedIn = isSynced();
+      const user = state.user || {};
+      const notifications = user.notifications || {};
+      const syncStatus = $('#sync-status');
+      const syncButton = $('#btn-open-sync');
+      const disconnectButton = $('#btn-disconnect');
+
+      if (signedIn) {
+        syncStatus.textContent = `Connected as @${USERNAME}. Use this username and your private sync code to sign in on another device.`;
+        syncButton.textContent = 'How to connect another device';
+        disconnectButton.hidden = false;
+      } else {
+        syncStatus.textContent = 'This device is storing plans locally. Set up a secure account to sync them across devices.';
+        syncButton.textContent = 'Set up sync';
+        disconnectButton.hidden = true;
+      }
+
+      $('#setting-push').checked = Boolean(notifications.browserPush);
+      $('#setting-email-toggle').checked = Boolean(notifications.emailReminders);
+      $('#setting-email-input').value = user.email || '';
+      $('#setting-email-time').value = notifications.emailReminderTime || '08:30';
+      $('#setting-email-group').hidden = !notifications.emailReminders;
+    },
+
+    saveNotificationSettings: async function() {
+      if (!isSynced()) {
+        showToast('Set up sync before saving reminders.');
+        this.showSyncPrompt('register');
+        return;
+      }
+
+      const emailEnabled = $('#setting-email-toggle').checked;
+      const email = $('#setting-email-input').value.trim().toLowerCase();
+      const emailTime = $('#setting-email-time').value || '08:30';
+      if (emailEnabled && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showToast('Enter a valid email address to enable email reminders.');
+        $('#setting-email-input').focus();
+        return;
+      }
+
+      const result = await Api.request('PUT', '/user/me', {
+        email,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || state.user?.timezone || 'UTC',
+        notifications: {
+          browserPush: $('#setting-push').checked,
+          emailReminders: emailEnabled,
+          emailReminderTime: emailTime
+        }
+      });
+      if (!result.success || !result.data) {
+        showToast(result.message || 'Could not save notification settings.');
+        return;
+      }
+
+      persistSession(result.data, AUTH_TOKEN);
+      this.populateSettings();
+      showToast(emailEnabled ? `Email reminders are set for ${emailTime}.` : 'Notification settings saved.', 'success');
+    },
+
+    disconnectDevice: function() {
+      clearSession();
+      state.tasks = [];
+      state.momentum = { daysCaredFor: 0, events: [] };
+      localStorage.removeItem(STORAGE_KEY_OFFLINE);
+      this.closeSyncPrompt();
+      $('#settings-modal').classList.remove('active');
+      $('#settings-backdrop').classList.remove('active');
+      this.startApp();
+      showToast('This device has been disconnected.');
     },
 
     addTask: async function(taskData) {
@@ -628,8 +891,7 @@
       Renderer.renderWeekGrid();
       Renderer.renderNowCard();
 
-      if (USERNAME && USERNAME !== 'User') {
-        newTask.username = USERNAME;
+      if (isSynced()) {
         const res = await Api.request('POST', '/tasks', newTask);
         if (res.success && res.data) {
           // Replace tempId with actual _id
@@ -652,7 +914,7 @@
        Renderer.renderWeekGrid();
        Renderer.renderNowCard();
 
-       if (USERNAME && USERNAME !== 'User' && state.tasks[idx]._id) {
+       if (isSynced() && state.tasks[idx]._id) {
          await Api.request('PUT', `/tasks/${state.tasks[idx]._id}`, updates);
        } else {
          Api.saveOffline('PUT', `/tasks/${id}`, updates);
@@ -667,8 +929,10 @@
       Renderer.renderWeekGrid();
       Renderer.renderNowCard();
       
-      if (USERNAME && USERNAME !== 'User' && task._id) {
+      if (isSynced() && task._id) {
         await Api.request('DELETE', `/tasks/${task._id}`);
+      } else {
+        Api.saveOffline('DELETE', `/tasks/${task.tempId}`, null);
       }
       showToast('Task deleted');
     },
@@ -727,7 +991,7 @@
     },
 
     recordMomentum: async function(actionType) {
-       if (!USERNAME || USERNAME === 'User') return;
+       if (!isSynced()) return;
        
        // Optimistic local update
        if (!state.momentum.events.some(e => e.date === CURRENT_DATE && e.actionType === actionType)) {
@@ -739,7 +1003,6 @@
        }
 
        const res = await Api.request('POST', '/momentum', {
-         username: USERNAME,
          date: CURRENT_DATE,
          actionType
        });
@@ -751,11 +1014,13 @@
 
     /* ========== FOCUS MODE ========== */
     startFocus: async function(task) {
-      if (!task) return;
+      if (!task || task.completed || state.focus.active) return;
       
       state.focus.active = true;
       state.focus.taskId = task._id || task.tempId;
       state.focus.duration = task.estimatedMinutes || 25;
+      state.focus.sessionId = null;
+      state.focus.sessionClosed = false;
       
       // Update UI picker
       $$('.duration-opt').forEach(el => el.classList.remove('active'));
@@ -763,21 +1028,21 @@
       if(!dOpt) dOpt = $(`.duration-opt[data-duration="25"]`);
       if(dOpt) dOpt.classList.add('active');
 
-      state.focus.duration = parseInt(dOpt.dataset.duration);
+      state.focus.duration = parseInt(dOpt?.dataset.duration || '25', 10);
       state.focus.remaining = state.focus.duration * 60;
       
       $('#focus-task-name').textContent = task.title;
       $('#focus-timer').textContent = formatTime(state.focus.remaining);
       
       $('#focus-overlay').classList.add('active');
+      $('#focus-overlay').setAttribute('aria-hidden', 'false');
       
       // Set task status to in_progress
       await this.updateTask(state.focus.taskId, { status: 'in_progress' });
       
       // Create session on backend
-      if (USERNAME && USERNAME !== 'User' && task._id) {
+      if (isSynced() && task._id) {
          const res = await Api.request('POST', '/focus', {
-           username: USERNAME,
            taskId: task._id,
            plannedDuration: state.focus.duration
          });
@@ -788,6 +1053,7 @@
     },
     
     toggleFocusTimer: function() {
+      if (!state.focus.active) return;
       const btn = $('#focus-toggle');
       if (state.focus.timerId) {
         // Pause
@@ -802,8 +1068,7 @@
             state.focus.remaining--;
             $('#focus-timer').textContent = formatTime(state.focus.remaining);
           } else {
-            this.endFocusSession('completed');
-            this.toggleFocusTimer(); // Pause
+            this.finishFocusSession();
           }
         }, 1000);
       }
@@ -817,6 +1082,7 @@
     },
 
     endFocusSession: async function(status = 'abandoned') {
+       if (state.focus.sessionClosed) return;
        if (state.focus.timerId) {
          clearInterval(state.focus.timerId);
          state.focus.timerId = null;
@@ -826,13 +1092,14 @@
        
        const completedMins = state.focus.duration - Math.ceil(state.focus.remaining / 60);
        
-       if (state.focus.sessionId && USERNAME && USERNAME !== 'User') {
+       if (state.focus.sessionId && isSynced()) {
          await Api.request('PUT', `/focus/${state.focus.sessionId}`, {
            endTime: new Date(),
            completedDuration: completedMins,
            status: status
          });
        }
+       state.focus.sessionClosed = true;
 
        if (status === 'completed' && completedMins > 0) {
          this.recordMomentum('focus_completed');
@@ -841,22 +1108,29 @@
        }
     },
 
-    exitFocusView: function() {
-       if (state.focus.timerId) {
-         if (!confirm("End current focus session?")) return;
-         this.endFocusSession('abandoned');
+    finishFocusSession: async function() {
+       await this.endFocusSession('completed');
+       await this.exitFocusView({ skipConfirm: true, taskStatus: 'planned' });
+    },
+
+    exitFocusView: async function(options = {}) {
+       if (state.focus.active && !state.focus.sessionClosed) {
+         if (state.focus.timerId && !options.skipConfirm && !confirm('End current focus session?')) return;
+         await this.endFocusSession('abandoned');
        }
        $('#focus-overlay').classList.remove('active');
+       $('#focus-overlay').setAttribute('aria-hidden', 'true');
        
        // Reset task status to planned if not completed
        const task = state.tasks.find(t => t._id === state.focus.taskId || t.tempId === state.focus.taskId);
        if (task && !task.completed) {
-         this.updateTask(task._id || task.tempId, { status: 'planned' });
+         await this.updateTask(task._id || task.tempId, { status: options.taskStatus || 'planned' });
        }
        
        state.focus.active = false;
        state.focus.taskId = null;
        state.focus.sessionId = null;
+       state.focus.sessionClosed = false;
     },
 
     /* ========== REFLECTION FLOW ========== */
@@ -877,9 +1151,8 @@
         completed: true
       };
 
-      if (USERNAME && USERNAME !== 'User') {
+      if (isSynced()) {
         await Api.request('POST', '/plans', {
-          username: USERNAME,
           date: CURRENT_DATE,
           reflection
         });
@@ -956,26 +1229,24 @@
       // Focus Mode
       $('#focus-exit').addEventListener('click', () => this.exitFocusView());
       $('#focus-toggle').addEventListener('click', () => this.toggleFocusTimer());
-      $('#focus-finish').addEventListener('click', () => {
-        this.endFocusSession('completed');
-        showToast("Session finished.");
-      });
-      $('#focus-complete').addEventListener('click', () => {
+      $('#focus-finish').addEventListener('click', () => this.finishFocusSession());
+      $('#focus-complete').addEventListener('click', async () => {
         if (state.focus.taskId) {
            const t = state.tasks.find(t => t._id === state.focus.taskId || t.tempId === state.focus.taskId);
-           if (t) this.toggleTaskCompletion(t, true);
+           if (t) await this.toggleTaskCompletion(t, true);
         }
-        this.exitFocusView();
+        await this.endFocusSession('completed');
+        await this.exitFocusView({ skipConfirm: true });
       });
       $('#focus-continue').addEventListener('click', () => {
         if (state.focus.timerId) this.toggleFocusTimer(); // pause
         this.setFocusDuration(state.focus.duration); // reset time
         showToast("Timer reset for another session");
       });
-      $('#focus-later').addEventListener('click', () => {
+      $('#focus-later').addEventListener('click', async () => {
          // Change status to 'planned'
-         if (state.focus.taskId) this.updateTask(state.focus.taskId, { status: 'planned' });
-         this.exitFocusView();
+         if (state.focus.taskId) await this.updateTask(state.focus.taskId, { status: 'planned' });
+         await this.exitFocusView({ skipConfirm: true });
       });
       
       $$('.duration-opt').forEach(opt => {
@@ -1000,6 +1271,7 @@
 
       // Settings Flow
       $('#settings-btn').addEventListener('click', () => {
+         this.populateSettings();
          $('#settings-modal').classList.add('active');
          $('#settings-backdrop').classList.add('active');
       });
@@ -1012,32 +1284,77 @@
          $('#settings-backdrop').classList.remove('active');
       });
 
+      $('#sync-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        this.submitSyncAccount();
+      });
+      $$('[data-account-mode]').forEach((button) => {
+        button.addEventListener('click', () => this.setAccountMode(button.dataset.accountMode));
+      });
+      $('#sync-skip').addEventListener('click', () => {
+        localStorage.setItem(STORAGE_KEY_ONBOARDED, '1');
+        this.closeSyncPrompt();
+        this.startApp();
+      });
+      $('#sync-close').addEventListener('click', () => this.closeSyncPrompt());
+      $('#sync-backdrop').addEventListener('click', () => this.closeSyncPrompt());
+
+      $('#btn-open-sync').addEventListener('click', () => {
+        if (isSynced()) {
+          showToast(`On your other device, sign in as @${USERNAME} with your private sync code.`);
+        } else {
+          this.showSyncPrompt('register');
+        }
+      });
+      $('#btn-disconnect').addEventListener('click', () => this.disconnectDevice());
+
       $('#setting-push').addEventListener('change', async (e) => {
          if (e.target.checked) {
            await SettingsLogic.subscribeToPush();
          }
       });
 
+      $('#setting-email-toggle').addEventListener('change', (event) => {
+        $('#setting-email-group').hidden = !event.target.checked;
+        if (event.target.checked) $('#setting-email-input').focus();
+      });
+
+      $('#btn-save-notifications').addEventListener('click', () => this.saveNotificationSettings());
+
       $('#btn-test-notification').addEventListener('click', async () => {
-         if (!USERNAME || USERNAME === 'User') return showToast('Please sync your name first.');
-         const res = await Api.request('POST', '/notifications/test', { username: USERNAME });
-         if (res.success) showToast('Test notifications sent!');
-         else showToast('Failed to send notifications.');
+         if (!isSynced()) return showToast('Set up sync before testing reminders.');
+         const res = await Api.request('POST', '/notifications/test');
+         if (res.success) showToast('Test notification sent!', 'success');
+         else showToast(res.message || 'No notification could be sent yet.');
       });
 
       $('#btn-export-data').addEventListener('click', () => {
-         if (!USERNAME || USERNAME === 'User') return showToast('No data to export locally.');
+         if (!isSynced()) return showToast('Set up sync before exporting account data.');
          window.open(`${API_BASE}/privacy/export/${USERNAME}`, '_blank');
       });
 
       $('#btn-delete-account').addEventListener('click', async () => {
          if (!confirm("Are you sure? This will delete all your tasks, plans, and momentum. This cannot be undone.")) return;
-         if (USERNAME && USERNAME !== 'User') {
+         if (isSynced()) {
             const res = await Api.request('DELETE', `/privacy/delete/${USERNAME}`);
             if (!res.success) return showToast('Failed to delete account.');
          }
-         localStorage.clear();
+         clearSession();
+         state.tasks = [];
+         state.momentum = { daysCaredFor: 0, events: [] };
+         localStorage.removeItem(STORAGE_KEY_OFFLINE);
+         localStorage.removeItem(STORAGE_KEY_ONBOARDED);
          window.location.reload();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if ($('#focus-overlay').classList.contains('active')) this.exitFocusView();
+        else if ($('#task-modal').classList.contains('active')) this.closeEditModal();
+        else if ($('#settings-modal').classList.contains('active')) {
+          $('#settings-modal').classList.remove('active');
+          $('#settings-backdrop').classList.remove('active');
+        } else if ($('#sync-modal').classList.contains('active')) this.closeSyncPrompt();
       });
 
 
@@ -1047,26 +1364,41 @@
   /* ========== 7. SETTINGS & PUSH LOGIC ========== */
   const SettingsLogic = {
     subscribeToPush: async function() {
+      if (!isSynced()) {
+        showToast('Set up sync before enabling browser notifications.');
+        $('#setting-push').checked = false;
+        return;
+      }
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         showToast('Push notifications are not supported by your browser.');
+        $('#setting-push').checked = false;
         return;
       }
 
       try {
+        const config = await Api.request('GET', '/notifications/config');
+        const vapidPublicKey = config.data?.vapidPublicKey;
+        if (!config.success || !vapidPublicKey) {
+          showToast('Browser notifications are not configured on the server yet.');
+          $('#setting-push').checked = false;
+          return;
+        }
         const registration = await navigator.serviceWorker.register('/sw.js');
-        const subscription = await registration.pushManager.subscribe({
+        const existingSubscription = await registration.pushManager.getSubscription();
+        const subscription = existingSubscription || await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: this.urlBase64ToUint8Array('BOLLqdZOEA2laemrjZ3AOMqUs_a42ieia30NO5m6ymAvSKc1F8xtAhgezFPbVCLpd9xA3oikkSyS-9lrcVaSL14')
+          applicationServerKey: this.urlBase64ToUint8Array(vapidPublicKey)
         });
 
-        if (USERNAME && USERNAME !== 'User') {
-          await Api.request('POST', '/notifications/subscribe', {
-            username: USERNAME,
-            subscription
-          });
+        if (isSynced()) {
+          const result = await Api.request('POST', '/notifications/subscribe', { subscription });
+          if (!result.success) throw new Error(result.message || 'Unable to save the push subscription.');
+          state.user = {
+            ...state.user,
+            notifications: { ...state.user?.notifications, browserPush: true }
+          };
+          persistSession(state.user, AUTH_TOKEN);
           showToast('Push notifications enabled!', 'success');
-        } else {
-          showToast('Please sync your name first to enable push.');
         }
       } catch (err) {
         console.error('Failed to subscribe:', err);

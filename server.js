@@ -9,6 +9,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const { requireAuth } = require('./lib/auth');
 
 const taskRoutes = require('./routes/tasks');
 const planRoutes = require('./routes/plans');
@@ -22,8 +23,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* ─── Middleware ─── */
+app.disable('x-powered-by');
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 /* ─── Lazy MongoDB connection (works for both local & serverless) ─── */
 let cachedDb = null;
@@ -46,13 +48,13 @@ app.use('/api', async (req, res, next) => {
 });
 
 /* ─── API Routes ─── */
-app.use('/api/tasks', taskRoutes);
-app.use('/api/plans', planRoutes);
-app.use('/api/focus', focusRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/momentum', momentumRoutes);
 app.use('/api/notifications', notificationsRoutes);
-app.use('/api/privacy', privacyRoutes);
+app.use('/api/tasks', requireAuth, taskRoutes);
+app.use('/api/plans', requireAuth, planRoutes);
+app.use('/api/focus', requireAuth, focusRoutes);
+app.use('/api/momentum', requireAuth, momentumRoutes);
+app.use('/api/privacy', requireAuth, privacyRoutes);
 
 /* ─── Local development only: serve static files ─── */
 if (!process.env.VERCEL) {

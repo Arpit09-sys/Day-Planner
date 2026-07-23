@@ -1,23 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const Momentum = require('../models/Momentum');
+const { requireCurrentUser } = require('../lib/auth');
 
 /* POST /api/momentum — Record event */
 router.post('/', async (req, res) => {
   try {
-    const { username, date, actionType, taskId, metadata } = req.body;
-    if (!username || !date || !actionType) {
-      return res.status(400).json({ success: false, message: 'username, date, and actionType required' });
+    const { date, actionType, taskId, metadata } = req.body;
+    if (!date || !actionType) {
+      return res.status(400).json({ success: false, message: 'date and actionType are required' });
     }
 
     // Prevent duplicates for singular events
-    const existing = await Momentum.findOne({ username, date, actionType });
+    const existing = await Momentum.findOne({ username: req.user.username, date, actionType });
     if (existing && ['plan_created', 'reflection_done'].includes(actionType)) {
       return res.json({ success: true, data: existing, duplicate: true });
     }
 
     const event = await Momentum.create({
-      username, date, actionType,
+      username: req.user.username, date, actionType,
       taskId: taskId || null,
       metadata: metadata || {}
     });
@@ -30,6 +31,7 @@ router.post('/', async (req, res) => {
 /* GET /api/momentum/:username */
 router.get('/:username', async (req, res) => {
   try {
+    if (!requireCurrentUser(req, res, req.params.username)) return;
     const limit = parseInt(req.query.days, 10) || 90;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - limit);

@@ -1,70 +1,72 @@
 # Day Planner
 
-A premium, fully responsive weekly planner built with **HTML5**, **CSS3**, and **Vanilla JavaScript**. No frameworks, no dependencies — just clean, modern web technologies.
+A calm, responsive daily planner for planning, focused work, reflection, and secure cross-device sync.
 
-## Features
+## What it does
 
-- **Weekly Planner** — 7 beautiful day cards (Mon–Sun) with task management
-- **Full CRUD** — Add, edit, delete, and reorder tasks
-- **Task Completion** — Checkbox with animated strikethrough and progress tracking
-- **Priority System** — High, Medium, Low with color-coded dots
-- **Time Scheduling** — Start time for each task, auto-sorted
-- **Progress Bars** — Smooth animated progress per day
-- **Weekly Statistics** — Dashboard with completion %, streak, most productive day
-- **Daily Auto-Reset** — Checkboxes reset each new day; tasks preserved
-- **Local Storage** — Everything saved automatically in the browser
-- **Motivational Quotes** — Rotating quotes in the hero section
-- **Responsive Design** — Works on desktop, tablet, and mobile
-- **Keyboard Accessible** — Full keyboard navigation support
-- **Premium UI** — Soft shadows, smooth animations, Inter typography
+- Create, edit, complete, and organize daily tasks.
+- Choose an intentional focus session when you want one; focus mode never opens automatically on startup.
+- Use a light or dark theme with a responsive mobile layout.
+- Create a secure sync account with a username and private sync code, then use those same details on a phone and laptop.
+- Store tasks, plans, focus sessions, and momentum in MongoDB.
+- Opt into a single daily email reminder at a chosen local time.
+- Export or permanently delete account data.
 
-## Tech Stack
+## Run locally
 
-| Technology | Purpose |
-|---|---|
-| HTML5 | Semantic structure |
-| CSS3 | Styling, animations, responsive layout |
-| Vanilla JS | Application logic, DOM manipulation |
-| LocalStorage | Data persistence |
-| Google Fonts | Inter typeface |
+1. Install dependencies.
 
-## Getting Started
+   ```bash
+   npm install
+   ```
 
-1. Clone or download this repository
-2. Open `index.html` in any modern browser
-3. Start planning your week!
+2. Copy `.env.example` to `.env` and fill in `MONGODB_URI`. For secure account syncing outside local development, also set a long `AUTH_SECRET`.
 
-No build tools, no server, no dependencies required.
+3. Start the app.
 
-## Folder Structure
+   ```bash
+   npm run dev
+   ```
 
+4. Visit `http://localhost:3000`.
+
+## Syncing a phone and laptop
+
+1. On the first device, finish onboarding and choose **Create account**.
+2. Pick a unique username and a private sync code of at least six characters.
+3. On the second device, choose **Sign in** and enter the same username and sync code.
+
+The username is not the security credential; the sync code protects the account. Do not share it.
+
+## Email reminders
+
+1. Configure SMTP and `CRON_SECRET` in the deployment environment. Gmail requires an [App Password](https://support.google.com/accounts/answer/185833), not a normal Gmail password.
+2. Deploy the production app.
+3. In **Settings & Privacy**, enable Email Reminders, enter the email address where reminders should arrive, choose a time, and save.
+4. Use **Send Test Notification** to verify delivery.
+
+The scheduler evaluates each user’s configured timezone and sends only once per date/time slot. The bundled `vercel.json` runs the reminder check every five minutes. Vercel Hobby projects allow only one cron invocation per day, so a five-minute schedule requires a non-Hobby Vercel plan or another cron service that calls `GET /api/notifications/cron/reminders` with `Authorization: Bearer <CRON_SECRET>`. See Vercel’s [Cron documentation](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
+
+## Deployment environment variables
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `MONGODB_URI` | Yes | MongoDB Atlas connection string |
+| `AUTH_SECRET` | Yes in production | Signs secure sync sessions |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | For email | Sends reminder emails |
+| `CRON_SECRET` | For scheduled email | Secures cron requests |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | For browser push | Enables web-push notifications |
+
+Never commit `.env` or sync/email secrets.
+
+## Project structure
+
+```text
+index.html          App shell and accessible modals
+style.css           Theme, responsive layout, and interactions
+script.js           Client state, offline queue, sync, and UI behavior
+server.js           Express app and Mongo connection
+lib/auth.js         Sync-code hashing and signed session helpers
+models/             MongoDB schemas
+routes/             Authenticated planner, reminder, and privacy APIs
 ```
-Day Planner/
-├── index.html      # Main HTML page
-├── style.css       # All styles and animations
-├── script.js       # Application logic
-└── README.md       # This file
-```
-
-## Browser Support
-
-- Chrome 80+
-- Firefox 80+
-- Safari 14+
-- Edge 80+
-
-## Future Enhancements (v2)
-
-- Dark Mode
-- Drag & Drop reordering
-- Calendar view
-- Notifications
-- Recurring tasks
-- Pomodoro timer
-- Habit tracker
-- Export / Import
-- Cloud sync
-
-## License
-
-MIT — free to use and modify.

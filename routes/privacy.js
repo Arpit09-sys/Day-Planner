@@ -5,11 +5,13 @@ const Task = require('../models/Task');
 const DailyPlan = require('../models/DailyPlan');
 const FocusSession = require('../models/FocusSession');
 const Momentum = require('../models/Momentum');
+const { requireCurrentUser } = require('../lib/auth');
 
 // GET /api/privacy/export/:username
 router.get('/export/:username', async (req, res) => {
   try {
     const { username } = req.params;
+    if (!requireCurrentUser(req, res, username)) return;
     
     const [user, tasks, plans, focus, momentum] = await Promise.all([
       User.findOne({ username }),
@@ -42,6 +44,7 @@ router.get('/export/:username', async (req, res) => {
 router.delete('/delete/:username', async (req, res) => {
   try {
     const { username } = req.params;
+    if (!requireCurrentUser(req, res, username)) return;
     
     const user = await User.findOne({ username });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
