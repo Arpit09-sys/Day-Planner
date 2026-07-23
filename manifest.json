@@ -1,0 +1,19 @@
+{
+  "name": "Day Planner",
+  "short_name": "Day Planner",
+  "description": "A calm, habit-building daily planning companion. Plan today. Focus. Reflect.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#151A18",
+  "theme_color": "#2F6F68",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "lifestyle"]
+}

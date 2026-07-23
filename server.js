@@ -9,7 +9,25 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./lib/auth');
+
+/* ─── Rate Limiters ─── */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' }
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please slow down.' }
+});
 
 const taskRoutes = require('./routes/tasks');
 const planRoutes = require('./routes/plans');
@@ -48,6 +66,9 @@ app.use('/api', async (req, res, next) => {
 });
 
 /* ─── API Routes ─── */
+app.use('/api', apiLimiter);
+app.use('/api/user/register', authLimiter);
+app.use('/api/user/login', authLimiter);
 app.use('/api/user', userRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);

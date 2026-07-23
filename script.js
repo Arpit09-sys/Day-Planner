@@ -93,18 +93,42 @@
     return toLocalDateKey(new Date());
   }
 
-  function formatTime(minutes) {
-    const m = Math.floor(minutes / 60);
-    const s = minutes % 60;
+  function formatTime(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
+
+  /* ========== COMPLETION SOUND ========== */
+  const CompletionSound = {
+    ctx: null,
+    play: function() {
+      if (state.user?.accessibility?.soundOff) return;
+      try {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = this.ctx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.frequency.setValueAtTime(800, ctx.currentTime + 0.08);
+        osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.16);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.35);
+      } catch(_) {}
+    }
+  };
 
   function getTodayDayKey() {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     return days[new Date().getDay()];
   }
 
-  function showToast(message, type = 'info') {
+  function showToast(message, type = 'info', options = {}) {
     const container = $('#toast-container');
     if (!container) return;
 
@@ -122,12 +146,26 @@
     const copy = document.createElement('span');
     copy.textContent = message;
     toast.appendChild(copy);
+
+    if (options.action) {
+      const btn = document.createElement('button');
+      btn.className = 'toast__action';
+      btn.textContent = options.action.label;
+      btn.addEventListener('click', () => { options.action.handler(); dismiss(); });
+      toast.appendChild(btn);
+    }
+
     container.appendChild(toast);
 
-    setTimeout(() => {
+    const duration = options.duration || 3000;
+    let timer;
+    function dismiss() {
+      clearTimeout(timer);
       toast.classList.add('toast--removing');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }
+    timer = setTimeout(dismiss, duration);
+    return dismiss;
   }
 
   /* ========== 3. THEME MANAGEMENT ========== */
@@ -300,6 +338,7 @@
       this.renderNowCard();
       this.renderWeekGrid();
       this.renderMomentum();
+      this.renderWeeklyBars();
     },
     updateDateTime: function() {
       const now = new Date();
@@ -543,13 +582,11 @@
         for(let i=0; i<totalDots; i++) {
           const dot = document.createElement('div');
           dot.className = 'momentum__dot';
-          // Visual mock: color some dots active
           if (i < Math.min(state.momentum.daysCaredFor, totalDots)) {
             dot.classList.add('momentum__dot--active');
           }
           dotsContainer.appendChild(dot);
         }
-        // If today has activity, color last active dot green
         if (state.momentum.events.some(e => e.date === CURRENT_DATE)) {
            const active = dotsContainer.querySelectorAll('.momentum__dot--active');
            if (active.length > 0) {
@@ -558,6 +595,47 @@
            }
         }
       }
+    },
+    renderWeeklyBars: function() {
+      const barsContainer = $('#weekly-bars');
+      const labelsContainer = $('#weekly-labels');
+      if (!barsContainer || !labelsContainer) return;
+
+      const now = new Date();
+      const dayOfWeek = now.getDay() || 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek + 1);
+
+      const dayNames = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+      let maxTasks = 1;
+      const dayCounts = [];
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        const dateStr = toLocalDateKey(d);
+        const dayTasks = state.tasks.filter(t => t.date === dateStr);
+        const completed = dayTasks.filter(t => t.completed).length;
+        const total = dayTasks.length;
+        dayCounts.push({ completed, total, isToday: dateStr === CURRENT_DATE });
+        if (total > maxTasks) maxTasks = total;
+      }
+
+      barsContainer.innerHTML = '';
+      labelsContainer.innerHTML = '';
+
+      dayCounts.forEach((day, i) => {
+        const bar = document.createElement('div');
+        bar.className = `weekly-bar${day.isToday ? ' weekly-bar--today' : ''}`;
+        const height = day.total > 0 ? Math.max(8, (day.completed / maxTasks) * 100) : 4;
+        bar.style.height = `${height}%`;
+        bar.title = `${day.completed}/${day.total} completed`;
+        barsContainer.appendChild(bar);
+
+        const label = document.createElement('span');
+        label.textContent = dayNames[i];
+        labelsContainer.appendChild(label);
+      });
     },
     escapeHTML: function (str) {
       if (!str) return '';
@@ -922,29 +1000,50 @@
     },
 
     deleteTask: async function(task) {
-      if (!confirm(`Delete task "${task.title}"?`)) return;
-      
+      // Remove from state immediately
+      const removedIdx = state.tasks.findIndex(t => t._id === task._id && t._id || t.tempId === task.tempId);
       state.tasks = state.tasks.filter(t => t._id !== task._id && t.tempId !== task.tempId);
       Renderer.renderTasks();
       Renderer.renderWeekGrid();
       Renderer.renderNowCard();
-      
-      if (isSynced() && task._id) {
-        await Api.request('DELETE', `/tasks/${task._id}`);
-      } else {
-        Api.saveOffline('DELETE', `/tasks/${task.tempId}`, null);
-      }
-      showToast('Task deleted');
+
+      let undone = false;
+      showToast('Task deleted', 'info', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          handler: () => {
+            undone = true;
+            state.tasks.splice(removedIdx, 0, task);
+            Renderer.renderTasks();
+            Renderer.renderWeekGrid();
+            Renderer.renderNowCard();
+            showToast('Task restored', 'success');
+          }
+        }
+      });
+
+      // Delay the actual server delete to allow undo
+      setTimeout(async () => {
+        if (undone) return;
+        if (isSynced() && task._id) {
+          await Api.request('DELETE', `/tasks/${task._id}`);
+        } else {
+          Api.saveOffline('DELETE', `/tasks/${task.tempId}`, null);
+        }
+      }, 5200);
     },
 
     toggleTaskCompletion: async function(task, isCompleted) {
        await this.updateTask(task._id || task.tempId, { completed: isCompleted });
        if (isCompleted) {
+         CompletionSound.play();
          this.recordMomentum('task_completed');
          showToast('Task completed! 🎉', 'success');
        } else {
          showToast('Task uncompleted');
        }
+       Renderer.renderWeeklyBars();
     },
 
     openEditModal: function(task = null, dateStr = CURRENT_DATE) {
@@ -1348,13 +1447,36 @@
       });
 
       document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        if ($('#focus-overlay').classList.contains('active')) this.exitFocusView();
-        else if ($('#task-modal').classList.contains('active')) this.closeEditModal();
-        else if ($('#settings-modal').classList.contains('active')) {
-          $('#settings-modal').classList.remove('active');
-          $('#settings-backdrop').classList.remove('active');
-        } else if ($('#sync-modal').classList.contains('active')) this.closeSyncPrompt();
+        // Close modals on Escape
+        if (event.key === 'Escape') {
+          if ($('#focus-overlay').classList.contains('active')) this.exitFocusView();
+          else if ($('#task-modal').classList.contains('active')) this.closeEditModal();
+          else if ($('#settings-modal').classList.contains('active')) {
+            $('#settings-modal').classList.remove('active');
+            $('#settings-backdrop').classList.remove('active');
+          } else if ($('#sync-modal').classList.contains('active')) this.closeSyncPrompt();
+          return;
+        }
+
+        // Don't trigger shortcuts when typing in an input/textarea
+        const tag = document.activeElement?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        // Don't trigger if any modal is open
+        if ($('.modal.active') || $('#focus-overlay.active') || $('#welcome:not(.hidden)')) return;
+
+        if (event.key === 'n' || event.key === 'N') {
+          event.preventDefault();
+          this.openEditModal();
+        } else if (event.key === '/' && !event.metaKey && !event.ctrlKey) {
+          event.preventDefault();
+          const searchInput = $('#search-input');
+          if (searchInput) searchInput.focus();
+          else $('#quick-add-input')?.focus();
+        } else if (event.key === 'f' || event.key === 'F') {
+          event.preventDefault();
+          const todayTasks = state.tasks.filter(t => (t.date === CURRENT_DATE || (!t.date && t.day === getTodayDayKey())) && !t.completed);
+          if (todayTasks.length > 0) this.startFocus(todayTasks[0]);
+        }
       });
 
 

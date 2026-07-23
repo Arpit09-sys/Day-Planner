@@ -27,12 +27,17 @@
     {
       "src": "icon.svg",
       "use": "@vercel/static"
+    },
+    {
+      "src": "manifest.json",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/server.js" },
     { "src": "/sw.js", "dest": "/sw.js" },
     { "src": "/icon.svg", "dest": "/icon.svg" },
+    { "src": "/manifest.json", "dest": "/manifest.json" },
     { "src": "/style.css", "dest": "/style.css" },
     { "src": "/script.js", "dest": "/script.js" },
     { "src": "/(.*)", "dest": "/index.html" }
