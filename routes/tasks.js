@@ -29,7 +29,9 @@ router.post('/', async (req, res) => {
       scheduledTime: scheduledTime || '',
       status: status || 'planned',
       completed: false,
-      order: order || 0
+      order: order || 0,
+      subtasks: req.body.subtasks || [],
+      recurrence: req.body.recurrence || 'none'
     });
 
     res.status(201).json({ success: true, data: task });
@@ -78,7 +80,7 @@ router.put('/:taskId', async (req, res) => {
     const allowed = [
       'title', 'time', 'priority', 'notes', 'completed', 'order', 'day',
       'date', 'category', 'estimatedMinutes', 'scheduledTime', 'status',
-      'completedAt', 'carriedForwardFrom'
+      'completedAt', 'carriedForwardFrom', 'subtasks', 'recurrence'
     ];
     allowed.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];

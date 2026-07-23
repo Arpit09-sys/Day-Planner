@@ -71,6 +71,20 @@ const taskSchema = new mongoose.Schema(
     order: {
       type: Number,
       default: 0
+    },
+    subtasks: [{
+      id: { type: String, required: true },
+      title: { type: String, required: true, trim: true },
+      completed: { type: Boolean, default: false }
+    }],
+    recurrence: {
+      type: String,
+      enum: ['none', 'daily', 'weekdays', 'weekly'],
+      default: 'none'
+    },
+    recurrenceSourceId: {
+      type: String,
+      default: ''
     }
   },
   {

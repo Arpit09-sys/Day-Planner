@@ -126,9 +126,26 @@
             </button>
           </div>
 
+          <!-- Search & filter -->
+          <div class="search-filter" id="search-filter">
+            <div class="search-bar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="search-input" placeholder="Search tasks…" autocomplete="off">
+              <button class="search-bar__clear" id="search-clear" hidden aria-label="Clear search">&times;</button>
+            </div>
+            <div class="filter-chips" id="filter-chips">
+              <button class="filter-chip active" data-filter="all">All</button>
+              <button class="filter-chip" data-filter="work">💼 Work</button>
+              <button class="filter-chip" data-filter="study">📚 Study</button>
+              <button class="filter-chip" data-filter="health">💪 Health</button>
+              <button class="filter-chip" data-filter="personal">🌟 Personal</button>
+              <button class="filter-chip" data-filter="high">🔴 High</button>
+            </div>
+          </div>
+
           <!-- Today's task list -->
           <div class="section-title">
-            <h2>Today's Tasks</h2>
+            <h2 id="task-list-heading">Today's Tasks</h2>
             <span class="section-title__count" id="task-count">0 tasks</span>
           </div>
           <div class="task-list" id="task-list" role="list" aria-label="Today's tasks"></div>
@@ -324,6 +341,25 @@
         <textarea id="task-notes-input" placeholder="Additional details…"></textarea>
       </div>
 
+      <div class="form-group">
+        <label>Subtasks <span style="color:var(--text-tertiary)">(optional)</span></label>
+        <div class="subtask-list" id="subtask-list"></div>
+        <div class="subtask-add">
+          <input type="text" id="subtask-input" placeholder="Add a subtask…" autocomplete="off">
+          <button type="button" class="btn btn--ghost btn--sm" id="subtask-add-btn">+ Add</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Repeat</label>
+        <div class="recurrence-options" id="recurrence-options">
+          <label class="category-opt active" data-recurrence="none"><input type="radio" name="recurrence" value="none" checked>None</label>
+          <label class="category-opt" data-recurrence="daily"><input type="radio" name="recurrence" value="daily">Daily</label>
+          <label class="category-opt" data-recurrence="weekdays"><input type="radio" name="recurrence" value="weekdays">Weekdays</label>
+          <label class="category-opt" data-recurrence="weekly"><input type="radio" name="recurrence" value="weekly">Weekly</label>
+        </div>
+      </div>
+
       <div class="modal__actions">
         <button type="button" class="btn btn--secondary" id="modal-cancel">Cancel</button>
         <button type="submit" class="btn btn--primary" id="modal-save">Save Task</button>
@@ -419,6 +455,7 @@
       
       <div class="settings-actions">
         <button class="btn btn--secondary" id="btn-export-data">Export Data (JSON)</button>
+        <button class="btn btn--secondary" id="btn-export-ics">Export Calendar (.ics)</button>
         <button class="btn btn--secondary" style="color:var(--coral); border-color:var(--coral);" id="btn-delete-account">Delete Account</button>
       </div>
     </div>

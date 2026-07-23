@@ -40,6 +40,10 @@
     user: savedSession?.user || null,
     accountMode: 'register',
     rendererStarted: false,
+    searchQuery: '',
+    activeFilter: 'all',
+    filterDate: null,
+    editSubtasks: [],
     focus: {
       active: false,
       taskId: null,
@@ -364,24 +368,57 @@
       
       list.innerHTML = '';
       
-      const todayTasks = state.tasks.filter(t => t.date === CURRENT_DATE || (!t.date && t.day === getTodayDayKey()));
-      
-      if (todayTasks.length === 0) {
-        list.innerHTML = `<div style="text-align:center; padding: 24px; color: var(--text-tertiary); font-size: var(--fs-sm);">No tasks for today. Start small!</div>`;
+      let filteredTasks;
+      if (state.filterDate) {
+        filteredTasks = state.tasks.filter(t => t.date === state.filterDate);
       } else {
-        todayTasks.sort((a, b) => a.order - b.order).forEach(task => {
+        filteredTasks = state.tasks.filter(t => t.date === CURRENT_DATE || (!t.date && t.day === getTodayDayKey()));
+      }
+
+      // Apply search
+      if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
+        filteredTasks = state.tasks.filter(t => t.title.toLowerCase().includes(q) || (t.notes && t.notes.toLowerCase().includes(q)));
+      }
+
+      // Apply category/priority filter
+      if (state.activeFilter !== 'all') {
+        if (['work', 'study', 'health', 'personal'].includes(state.activeFilter)) {
+          filteredTasks = filteredTasks.filter(t => t.category === state.activeFilter);
+        } else if (state.activeFilter === 'high') {
+          filteredTasks = filteredTasks.filter(t => t.priority === 'high');
+        }
+      }
+      
+      if (filteredTasks.length === 0) {
+        const msg = state.searchQuery ? 'No tasks match your search.' : (state.filterDate ? 'No tasks for this day.' : 'No tasks for today. Start small!');
+        list.innerHTML = `<div style="text-align:center; padding: 24px; color: var(--text-tertiary); font-size: var(--fs-sm);">${msg}</div>`;
+      } else {
+        filteredTasks.sort((a, b) => a.order - b.order).forEach(task => {
           list.appendChild(this.createTaskElement(task));
         });
       }
       
-      if ($('#task-count')) $('#task-count').textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''}`;
+      // Update heading
+      const heading = $('#task-list-heading');
+      if (heading) {
+        if (state.searchQuery) heading.textContent = 'Search Results';
+        else if (state.filterDate && state.filterDate !== CURRENT_DATE) {
+          const d = new Date(state.filterDate + 'T12:00:00');
+          heading.textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+        } else heading.textContent = "Today's Tasks";
+      }
+
+      if ($('#task-count')) $('#task-count').textContent = `${filteredTasks.length} task${filteredTasks.length !== 1 ? 's' : ''}`;
       
+      const todayTasks = state.tasks.filter(t => t.date === CURRENT_DATE || (!t.date && t.day === getTodayDayKey()));
       this.updateProgressRing(todayTasks);
     },
     createTaskElement: function(task) {
       const el = document.createElement('div');
       el.className = `task-item ${task.completed ? 'task-item--done' : ''}`;
       el.dataset.id = task._id || task.tempId;
+      el.draggable = true;
       
       let priorityClass = '';
       if (task.priority === 'high') priorityClass = 'task-item__priority--high';
@@ -396,6 +433,25 @@
         catBadge = `<span class="task-item__category task-item__category--${task.category}">${task.category}</span>`;
       }
 
+      let recurrenceBadge = '';
+      if (task.recurrence && task.recurrence !== 'none') {
+        const labels = { daily: '↻ Daily', weekdays: '↻ Weekdays', weekly: '↻ Weekly' };
+        recurrenceBadge = `<span class="task-item__recurrence">${labels[task.recurrence] || task.recurrence}</span>`;
+      }
+
+      let subtasksHtml = '';
+      if (task.subtasks && task.subtasks.length > 0) {
+        const doneCount = task.subtasks.filter(s => s.completed).length;
+        subtasksHtml = `<div class="task-item__subtasks">`;
+        task.subtasks.forEach(st => {
+          subtasksHtml += `<div class="task-item__subtask ${st.completed ? 'task-item__subtask--done' : ''}">
+            <input type="checkbox" ${st.completed ? 'checked' : ''} data-subtask-id="${st.id}">
+            <span>${this.escapeHTML(st.title)}</span>
+          </div>`;
+        });
+        subtasksHtml += `</div>`;
+      }
+
       el.innerHTML = `
         <div class="task-item__priority ${priorityClass}"></div>
         <label class="task-item__check">
@@ -407,9 +463,12 @@
           <div class="task-item__details">
             ${statusLabel}
             ${catBadge}
+            ${recurrenceBadge}
             ${task.time ? `<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${task.time}</span>` : ''}
             ${task.estimatedMinutes ? `<span>${task.estimatedMinutes}m</span>` : ''}
+            ${task.subtasks && task.subtasks.length > 0 ? `<span>${task.subtasks.filter(s => s.completed).length}/${task.subtasks.length} steps</span>` : ''}
           </div>
+          ${subtasksHtml}
         </div>
         <div class="task-item__actions">
           <button class="task-action focus-task-btn" title="Focus" aria-label="Focus on task">
@@ -424,13 +483,42 @@
         </div>
       `;
 
-      // Event Listeners for Actions
+      // Event Listeners
       const checkbox = el.querySelector('input[type="checkbox"]');
       checkbox.addEventListener('change', (e) => Logic.toggleTaskCompletion(task, e.target.checked));
-
       el.querySelector('.delete-task-btn').addEventListener('click', () => Logic.deleteTask(task));
       el.querySelector('.edit-task-btn').addEventListener('click', () => Logic.openEditModal(task));
       el.querySelector('.focus-task-btn').addEventListener('click', () => Logic.startFocus(task));
+
+      // Subtask inline toggle
+      el.querySelectorAll('[data-subtask-id]').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const stId = e.target.dataset.subtaskId;
+          const updated = (task.subtasks || []).map(s => s.id === stId ? { ...s, completed: e.target.checked } : s);
+          Logic.updateTask(task._id || task.tempId, { subtasks: updated });
+        });
+      });
+
+      // Drag-and-drop
+      el.addEventListener('dragstart', (e) => {
+        el.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', task._id || task.tempId);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        el.classList.add('drag-over');
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        const targetId = task._id || task.tempId;
+        if (draggedId !== targetId) Logic.reorderTask(draggedId, targetId);
+      });
 
       return el;
     },
@@ -563,6 +651,16 @@
            const dStr = e.currentTarget.dataset.date;
            Logic.openEditModal(null, dStr);
         });
+
+        // Click day header to filter
+        col.querySelector('.day-col__header').addEventListener('click', () => {
+          state.filterDate = (state.filterDate === dateStr) ? null : dateStr;
+          Renderer.renderTasks();
+          // Highlight selected
+          $$('.day-col').forEach(c => c.classList.remove('day-col--selected'));
+          if (state.filterDate === dateStr) col.classList.add('day-col--selected');
+        });
+        col.querySelector('.day-col__header').style.cursor = 'pointer';
 
         grid.appendChild(col);
       }
@@ -859,6 +957,7 @@
       $('#app').classList.add('active');
       Renderer.init();
       this.populateSettings();
+      this.generateRecurringTasks();
     },
 
     loadData: async function() {
@@ -958,6 +1057,8 @@
         time: taskData.time || '',
         estimatedMinutes: taskData.estimatedMinutes || 0,
         notes: taskData.notes || '',
+        subtasks: taskData.subtasks || [],
+        recurrence: taskData.recurrence || 'none',
         status: 'planned',
         completed: false,
         tempId: generateId(),
@@ -972,7 +1073,6 @@
       if (isSynced()) {
         const res = await Api.request('POST', '/tasks', newTask);
         if (res.success && res.data) {
-          // Replace tempId with actual _id
           const idx = state.tasks.findIndex(t => t.tempId === newTask.tempId);
           if (idx !== -1) state.tasks[idx] = res.data;
         }
@@ -981,6 +1081,26 @@
       }
       
       showToast('Task added');
+    },
+
+    reorderTask: async function(draggedId, targetId) {
+      const dragIdx = state.tasks.findIndex(t => (t._id || t.tempId) === draggedId);
+      const targetIdx = state.tasks.findIndex(t => (t._id || t.tempId) === targetId);
+      if (dragIdx === -1 || targetIdx === -1) return;
+
+      const [moved] = state.tasks.splice(dragIdx, 1);
+      state.tasks.splice(targetIdx, 0, moved);
+
+      // Update order for all tasks
+      state.tasks.forEach((t, i) => t.order = i);
+      Renderer.renderTasks();
+
+      // Save reordered tasks to server
+      if (isSynced()) {
+        for (const t of state.tasks) {
+          if (t._id) await Api.request('PUT', `/tasks/${t._id}`, { order: t.order });
+        }
+      }
     },
 
     updateTask: async function(id, updates) {
@@ -1053,6 +1173,7 @@
        
        form.reset();
        $$('.priority-opt, .category-opt').forEach(el => el.classList.remove('active'));
+       $$('[data-recurrence]').forEach(el => el.classList.remove('active'));
 
        if (task) {
          $('#modal-title').textContent = 'Edit Task';
@@ -1068,7 +1189,11 @@
          const cOpt = $(`.category-opt[data-category="${task.category || 'none'}"]`);
          if(cOpt) { cOpt.classList.add('active'); cOpt.querySelector('input').checked = true; }
          
+         const rOpt = $(`[data-recurrence="${task.recurrence || 'none'}"]`);
+         if(rOpt) { rOpt.classList.add('active'); rOpt.querySelector('input').checked = true; }
+
          $('#task-edit-date').value = task.date || CURRENT_DATE;
+         state.editSubtasks = (task.subtasks || []).map(s => ({...s}));
        } else {
          $('#modal-title').textContent = 'Add Task';
          $('#task-edit-id').value = '';
@@ -1077,11 +1202,50 @@
          $(`.priority-opt[data-priority="medium"] input`).checked = true;
          $(`.category-opt[data-category="none"]`).classList.add('active');
          $(`.category-opt[data-category="none"] input`).checked = true;
+         $('[data-recurrence="none"]').classList.add('active');
+         $('[data-recurrence="none"] input').checked = true;
+         state.editSubtasks = [];
        }
+
+       this.renderSubtaskList();
        
        modal.classList.add('active');
        backdrop.classList.add('active');
        setTimeout(() => $('#task-title-input').focus(), 100);
+    },
+
+    renderSubtaskList: function() {
+      const container = $('#subtask-list');
+      if (!container) return;
+      container.innerHTML = '';
+      state.editSubtasks.forEach((st, i) => {
+        const item = document.createElement('div');
+        item.className = `subtask-item ${st.completed ? 'subtask-item--done' : ''}`;
+        item.innerHTML = `
+          <input type="checkbox" class="subtask-item__check" ${st.completed ? 'checked' : ''}>
+          <span class="subtask-item__title">${Renderer.escapeHTML(st.title)}</span>
+          <button type="button" class="subtask-item__remove" title="Remove">&times;</button>
+        `;
+        item.querySelector('.subtask-item__check').addEventListener('change', (e) => {
+          state.editSubtasks[i].completed = e.target.checked;
+          this.renderSubtaskList();
+        });
+        item.querySelector('.subtask-item__remove').addEventListener('click', () => {
+          state.editSubtasks.splice(i, 1);
+          this.renderSubtaskList();
+        });
+        container.appendChild(item);
+      });
+    },
+
+    addEditSubtask: function() {
+      const input = $('#subtask-input');
+      const title = input.value.trim();
+      if (!title) return;
+      state.editSubtasks.push({ id: generateId(), title, completed: false });
+      input.value = '';
+      this.renderSubtaskList();
+      input.focus();
     },
 
     closeEditModal: function() {
@@ -1279,13 +1443,15 @@
         
         const priority = $('.priority-opt.active').dataset.priority;
         const category = $('.category-opt.active').dataset.category;
+        const recurrence = $('[data-recurrence].active')?.dataset.recurrence || 'none';
+        const subtasks = [...state.editSubtasks];
 
         if (!title) return;
 
         if (id) {
-          this.updateTask(id, { title, date, priority, category, time, estimatedMinutes, notes });
+          this.updateTask(id, { title, date, priority, category, time, estimatedMinutes, notes, subtasks, recurrence });
         } else {
-          this.addTask({ title, date, priority, category, time, estimatedMinutes, notes });
+          this.addTask({ title, date, priority, category, time, estimatedMinutes, notes, subtasks, recurrence });
         }
         
         this.closeEditModal();
@@ -1299,11 +1465,54 @@
           opt.querySelector('input').checked = true;
         });
       });
-      $$('.category-opt').forEach(opt => {
+      $$('.category-opt:not([data-recurrence])').forEach(opt => {
         opt.addEventListener('click', () => {
-          $$('.category-opt').forEach(o => o.classList.remove('active'));
+          $$('.category-opt:not([data-recurrence])').forEach(o => o.classList.remove('active'));
           opt.classList.add('active');
           opt.querySelector('input').checked = true;
+        });
+      });
+
+      // Recurrence toggles
+      $$('[data-recurrence]').forEach(opt => {
+        opt.addEventListener('click', () => {
+          $$('[data-recurrence]').forEach(o => o.classList.remove('active'));
+          opt.classList.add('active');
+          opt.querySelector('input').checked = true;
+        });
+      });
+
+      // Subtask add
+      $('#subtask-add-btn').addEventListener('click', () => this.addEditSubtask());
+      $('#subtask-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.addEditSubtask(); }
+      });
+
+      // Search & Filter
+      const searchInput = $('#search-input');
+      const searchClear = $('#search-clear');
+      let searchDebounce;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => {
+          state.searchQuery = searchInput.value.trim();
+          searchClear.hidden = !state.searchQuery;
+          Renderer.renderTasks();
+        }, 200);
+      });
+      searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        state.searchQuery = '';
+        searchClear.hidden = true;
+        Renderer.renderTasks();
+      });
+
+      $$('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          $$('.filter-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          state.activeFilter = chip.dataset.filter;
+          Renderer.renderTasks();
         });
       });
 
@@ -1432,6 +1641,8 @@
          window.open(`${API_BASE}/privacy/export/${USERNAME}`, '_blank');
       });
 
+      $('#btn-export-ics').addEventListener('click', () => this.exportICS());
+
       $('#btn-delete-account').addEventListener('click', async () => {
          if (!confirm("Are you sure? This will delete all your tasks, plans, and momentum. This cannot be undone.")) return;
          if (isSynced()) {
@@ -1480,6 +1691,91 @@
       });
 
 
+    },
+
+    /* ========== ICS EXPORT ========== */
+    exportICS: function() {
+      const tasks = state.tasks.filter(t => t.date && !t.completed);
+      if (tasks.length === 0) return showToast('No upcoming tasks to export.');
+
+      let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Day Planner//EN\r\nCALSCALE:GREGORIAN\r\n';
+
+      tasks.forEach(t => {
+        const dateClean = t.date.replace(/-/g, '');
+        let dtStart = dateClean;
+        let dtEnd = dateClean;
+        
+        if (t.time) {
+          const [h, m] = t.time.split(':');
+          dtStart = `${dateClean}T${h}${m}00`;
+          const endMin = (parseInt(h) * 60 + parseInt(m)) + (t.estimatedMinutes || 30);
+          const eh = String(Math.floor(endMin / 60)).padStart(2, '0');
+          const em = String(endMin % 60).padStart(2, '0');
+          dtEnd = `${dateClean}T${eh}${em}00`;
+        }
+
+        ics += 'BEGIN:VEVENT\r\n';
+        ics += `UID:${t._id || t.tempId}@dayplanner\r\n`;
+        ics += `DTSTART;VALUE=DATE${t.time ? '' : ''}:${dtStart}\r\n`;
+        if (t.time) ics += `DTEND:${dtEnd}\r\n`;
+        ics += `SUMMARY:${t.title.replace(/[\r\n,;]/g, ' ')}\r\n`;
+        if (t.notes) ics += `DESCRIPTION:${t.notes.replace(/[\r\n]/g, '\\n')}\r\n`;
+        if (t.priority === 'high') ics += 'PRIORITY:1\r\n';
+        else if (t.priority === 'low') ics += 'PRIORITY:9\r\n';
+        else ics += 'PRIORITY:5\r\n';
+        ics += 'END:VEVENT\r\n';
+      });
+
+      ics += 'END:VCALENDAR\r\n';
+
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `day-planner-${CURRENT_DATE}.ics`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Calendar exported!', 'success');
+    },
+
+    /* ========== RECURRING TASKS ========== */
+    generateRecurringTasks: function() {
+      const recurringTasks = state.tasks.filter(t => t.recurrence && t.recurrence !== 'none');
+      const todayDate = CURRENT_DATE;
+      const dayOfWeek = new Date().getDay(); // 0=Sun, 6=Sat
+
+      recurringTasks.forEach(t => {
+        // Check if a task already exists for today from this recurrence
+        const alreadyExists = state.tasks.some(existing =>
+          existing.recurrenceSourceId === (t._id || t.tempId) && existing.date === todayDate
+        );
+        if (alreadyExists) return;
+        // Don't duplicate if the source task IS for today
+        if (t.date === todayDate) return;
+
+        let shouldCreate = false;
+        if (t.recurrence === 'daily') shouldCreate = true;
+        else if (t.recurrence === 'weekdays') shouldCreate = dayOfWeek >= 1 && dayOfWeek <= 5;
+        else if (t.recurrence === 'weekly') {
+          const sourceDate = new Date(t.date + 'T12:00:00');
+          shouldCreate = sourceDate.getDay() === dayOfWeek;
+        }
+
+        if (shouldCreate) {
+          this.addTask({
+            title: t.title,
+            date: todayDate,
+            category: t.category,
+            priority: t.priority,
+            time: t.time,
+            estimatedMinutes: t.estimatedMinutes,
+            notes: t.notes,
+            subtasks: (t.subtasks || []).map(s => ({ ...s, id: generateId(), completed: false })),
+            recurrence: 'none',
+            recurrenceSourceId: t._id || t.tempId
+          });
+        }
+      });
     }
   };
 
