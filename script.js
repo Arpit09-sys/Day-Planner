@@ -127,6 +127,124 @@
     }
   };
 
+  /* ========== DAILY QUOTES ========== */
+  const DAILY_QUOTES = [
+    "The secret of getting ahead is getting started. — Mark Twain",
+    "Do what you can, with what you have, where you are. — Theodore Roosevelt",
+    "It is not that we have a short time to live, but that we waste much of it. — Seneca",
+    "Begin at once to live. — Seneca",
+    "We are what we repeatedly do. — Aristotle",
+    "A year from now you will wish you had started today. — Karen Lamb",
+    "The best time to plant a tree was 20 years ago. The second best time is now.",
+    "Small daily improvements are the key to staggering long-term results.",
+    "You don't have to be great to start, but you have to start to be great. — Zig Ziglar",
+    "Focus on being productive instead of busy. — Tim Ferriss",
+    "The way to get started is to quit talking and begin doing. — Walt Disney",
+    "Don't watch the clock; do what it does. Keep going. — Sam Levenson",
+    "Either you run the day, or the day runs you. — Jim Rohn",
+    "Your future is created by what you do today, not tomorrow. — Robert Kiyosaki",
+    "The only way to do great work is to love what you do. — Steve Jobs",
+    "Progress, not perfection.",
+    "What gets measured gets managed. — Peter Drucker",
+    "Simplicity is the ultimate sophistication. — Leonardo da Vinci",
+    "It always seems impossible until it's done. — Nelson Mandela",
+    "One day or day one. You decide.",
+    "If it's important, do it first.",
+    "Done is better than perfect.",
+    "Plan your work and work your plan.",
+    "The present moment is filled with joy and happiness. If you are attentive, you will see it. — Thich Nhat Hanh",
+    "How we spend our days is how we spend our lives. — Annie Dillard",
+    "Discipline is choosing between what you want now and what you want most.",
+    "Amateurs sit and wait for inspiration. The rest of us get up and go to work. — Stephen King",
+    "You will never always be motivated. Learn to be disciplined.",
+    "A little progress each day adds up to big results.",
+    "Consistency is what transforms average into excellence.",
+    "Clear mind. Full heart. Can't lose.",
+    "Time is what we want most, but what we use worst. — William Penn",
+    "The harder you work for something, the greater you'll feel when you achieve it.",
+    "Don't count the days. Make the days count. — Muhammad Ali",
+    "Start where you are. Use what you have. Do what you can. — Arthur Ashe",
+    "What you do today can improve all your tomorrows. — Ralph Marston",
+    "Action is the foundational key to all success. — Pablo Picasso",
+    "Strive not to be a success, but rather to be of value. — Albert Einstein",
+    "Productivity is never an accident. It is always the result of commitment.",
+    "First things first, second things never. — Shirley Conran",
+    "A calm mind leads to clear decisions.",
+    "Rest when you must, but never quit.",
+    "The journey of a thousand miles begins with a single step. — Lao Tzu",
+    "You are confined only by the walls you build yourself.",
+    "Energy and persistence conquer all things. — Benjamin Franklin",
+    "Be stubborn about your goals and flexible about your methods.",
+    "Think big, start small, act now.",
+    "Life is 10% what happens to you and 90% how you react to it. — Charles Swindoll",
+    "Take care of your body. It's the only place you have to live. — Jim Rohn",
+    "Success is the sum of small efforts repeated day in and day out. — Robert Collier"
+  ];
+
+  function getDailyQuote() {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+    return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
+  }
+
+  /* ========== CONFETTI BURST ========== */
+  function spawnConfetti(x, y) {
+    const container = document.createElement('div');
+    container.className = 'confetti-container';
+    container.style.left = x + 'px';
+    container.style.top = y + 'px';
+    const colors = ['#2F6F68', '#C58B43', '#4D8C62', '#C86858', '#6B5B8A', '#8B6914'];
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.className = 'confetti-particle';
+      const angle = (Math.PI * 2 / 8) * i + (Math.random() - 0.5);
+      const dist = 30 + Math.random() * 40;
+      p.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--ty', Math.sin(angle) * dist - 20 + 'px');
+      p.style.background = colors[Math.floor(Math.random() * colors.length)];
+      p.style.width = (4 + Math.random() * 4) + 'px';
+      p.style.height = p.style.width;
+      container.appendChild(p);
+    }
+    document.body.appendChild(container);
+    setTimeout(() => container.remove(), 900);
+  }
+
+  /* ========== CONTEXT MENU ========== */
+  let activeContextMenu = null;
+  function showContextMenu(x, y, items) {
+    hideContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    items.forEach(item => {
+      if (item.divider) {
+        const div = document.createElement('div');
+        div.className = 'context-menu__divider';
+        menu.appendChild(div);
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.className = `context-menu__item ${item.danger ? 'context-menu__item--danger' : ''}`;
+      btn.innerHTML = `${item.icon || ''} ${item.label}`;
+      btn.addEventListener('click', () => {
+        hideContextMenu();
+        item.handler();
+      });
+      menu.appendChild(btn);
+    });
+    // Position
+    menu.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - 300) + 'px';
+    document.body.appendChild(menu);
+    activeContextMenu = menu;
+  }
+  function hideContextMenu() {
+    if (activeContextMenu) { activeContextMenu.remove(); activeContextMenu = null; }
+  }
+  document.addEventListener('click', hideContextMenu);
+  document.addEventListener('contextmenu', (e) => {
+    if (activeContextMenu && !activeContextMenu.contains(e.target)) hideContextMenu();
+  });
+
   function getTodayDayKey() {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     return days[new Date().getDay()];
@@ -353,13 +471,28 @@
         $('#nav-time-text').textContent = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
       }
       
+      const greeting$ = $('.greeting');
       if ($('#greeting-text')) {
         const hour = now.getHours();
-        let greeting = 'Good evening';
-        if (hour < 12) greeting = 'Good morning';
-        else if (hour < 17) greeting = 'Good afternoon';
+        let greetingText = 'Good evening';
+        let timeClass = 'greeting--evening';
+        if (hour < 6) { greetingText = 'Good night'; timeClass = 'greeting--night'; }
+        else if (hour < 12) { greetingText = 'Good morning'; timeClass = 'greeting--morning'; }
+        else if (hour < 17) { greetingText = 'Good afternoon'; timeClass = 'greeting--afternoon'; }
         const name = state.user?.displayName || USERNAME;
-        $('#greeting-text').textContent = `${greeting}${name ? ', ' + name : '.'}`;
+        $('#greeting-text').textContent = `${greetingText}${name ? ', ' + name : '.'}`;
+
+        // Apply time-of-day class
+        if (greeting$) {
+          greeting$.classList.remove('greeting--morning', 'greeting--afternoon', 'greeting--evening', 'greeting--night');
+          greeting$.classList.add(timeClass);
+        }
+      }
+
+      // Daily quote
+      const quote$ = $('#greeting-quote');
+      if (quote$ && !quote$.textContent) {
+        quote$.textContent = `"${getDailyQuote()}"`;
       }
     },
     renderTasks: function() {
@@ -392,7 +525,18 @@
       
       if (filteredTasks.length === 0) {
         const msg = state.searchQuery ? 'No tasks match your search.' : (state.filterDate ? 'No tasks for this day.' : 'No tasks for today. Start small!');
-        list.innerHTML = `<div style="text-align:center; padding: 24px; color: var(--text-tertiary); font-size: var(--fs-sm);">${msg}</div>`;
+        const emptyIllustration = state.searchQuery ? '' : `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="margin-bottom:12px; opacity:0.5;">
+          <rect x="16" y="20" width="32" height="36" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
+          <line x1="22" y1="30" x2="42" y2="30" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.4"/>
+          <line x1="22" y1="36" x2="38" y2="36" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.3"/>
+          <line x1="22" y1="42" x2="35" y2="42" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.2"/>
+          <path d="M32 20 C32 14 36 10 38 8" stroke="#4D8C62" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <path d="M38 8 C35 9 33 12 33 15" stroke="#4D8C62" stroke-width="1" fill="none"/>
+          <ellipse cx="38" cy="7" rx="3" ry="2" fill="#4D8C62" opacity="0.3"/>
+          <path d="M32 20 C32 15 28 11 26 9" stroke="#2F6F68" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <ellipse cx="26" cy="8" rx="2.5" ry="2" fill="#2F6F68" opacity="0.3"/>
+        </svg>`;
+        list.innerHTML = `<div style="text-align:center; padding: 32px 24px; color: var(--text-tertiary); font-size: var(--fs-sm); display:flex; flex-direction:column; align-items:center;">${emptyIllustration}<span>${msg}</span><span style="font-size:12px; margin-top:4px; opacity:0.6;">Press <kbd style="padding:1px 5px; border:1px solid var(--border); border-radius:3px; font-size:11px; background:var(--bg-alt);">N</kbd> to add your first task</span></div>`;
       } else {
         filteredTasks.sort((a, b) => a.order - b.order).forEach(task => {
           list.appendChild(this.createTaskElement(task));
@@ -485,10 +629,27 @@
 
       // Event Listeners
       const checkbox = el.querySelector('input[type="checkbox"]');
-      checkbox.addEventListener('change', (e) => Logic.toggleTaskCompletion(task, e.target.checked));
+      checkbox.addEventListener('change', (e) => Logic.toggleTaskCompletion(task, e.target.checked, e));
       el.querySelector('.delete-task-btn').addEventListener('click', () => Logic.deleteTask(task));
       el.querySelector('.edit-task-btn').addEventListener('click', () => Logic.openEditModal(task));
       el.querySelector('.focus-task-btn').addEventListener('click', () => Logic.startFocus(task));
+
+      // Right-click context menu
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = toLocalDateKey(tomorrow);
+        showContextMenu(e.clientX, e.clientY, [
+          { icon: '✏️', label: 'Edit', handler: () => Logic.openEditModal(task) },
+          { icon: '🎯', label: 'Focus', handler: () => Logic.startFocus(task) },
+          { icon: task.completed ? '↩️' : '✅', label: task.completed ? 'Uncomplete' : 'Complete', handler: () => Logic.toggleTaskCompletion(task, !task.completed, e) },
+          { divider: true },
+          { icon: '📅', label: 'Move to tomorrow', handler: () => Logic.updateTask(task._id || task.tempId, { date: tomorrowStr }) },
+          { divider: true },
+          { icon: '🗑️', label: 'Delete', danger: true, handler: () => Logic.deleteTask(task) }
+        ]);
+      });
 
       // Subtask inline toggle
       el.querySelectorAll('[data-subtask-id]').forEach(cb => {
@@ -958,6 +1119,49 @@
       Renderer.init();
       this.populateSettings();
       this.generateRecurringTasks();
+      this.checkCarryForward();
+    },
+
+    checkCarryForward: function() {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = toLocalDateKey(yesterday);
+      const unfinished = state.tasks.filter(t => t.date === yesterdayStr && !t.completed);
+      
+      if (unfinished.length === 0) return;
+
+      // Create or show carry-forward banner
+      let banner = $('#carry-forward-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'carry-forward-banner';
+        banner.className = 'carry-forward';
+        const mainCol = $('.main-col');
+        if (mainCol) mainCol.insertBefore(banner, mainCol.firstChild);
+      }
+
+      banner.innerHTML = `
+        <div class="carry-forward__text">
+          You had <strong>${unfinished.length} unfinished task${unfinished.length > 1 ? 's' : ''}</strong> from yesterday.
+        </div>
+        <div class="carry-forward__actions">
+          <button class="btn btn--primary btn--sm" id="carry-forward-yes">Carry to today</button>
+          <button class="btn btn--ghost btn--sm" id="carry-forward-dismiss">Dismiss</button>
+        </div>
+      `;
+      banner.classList.remove('hidden');
+
+      $('#carry-forward-yes').addEventListener('click', () => {
+        unfinished.forEach(t => {
+          this.updateTask(t._id || t.tempId, { date: CURRENT_DATE });
+        });
+        banner.classList.add('hidden');
+        showToast(`${unfinished.length} task${unfinished.length > 1 ? 's' : ''} carried forward`, 'success');
+      });
+
+      $('#carry-forward-dismiss').addEventListener('click', () => {
+        banner.classList.add('hidden');
+      });
     },
 
     loadData: async function() {
@@ -1154,12 +1358,20 @@
       }, 5200);
     },
 
-    toggleTaskCompletion: async function(task, isCompleted) {
+    toggleTaskCompletion: async function(task, isCompleted, event) {
        await this.updateTask(task._id || task.tempId, { completed: isCompleted });
        if (isCompleted) {
          CompletionSound.play();
          this.recordMomentum('task_completed');
          showToast('Task completed! 🎉', 'success');
+         // Confetti from checkbox position
+         if (event && event.target) {
+           const rect = event.target.getBoundingClientRect();
+           spawnConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
+         }
+         // Update focus streak
+         const streak = parseInt(localStorage.getItem('dayplanner_focus_streak') || '0');
+         localStorage.setItem('dayplanner_focus_streak', String(streak));
        } else {
          showToast('Task uncompleted');
        }
@@ -1367,7 +1579,13 @@
        if (status === 'completed' && completedMins > 0) {
          this.recordMomentum('focus_completed');
          if ('vibrate' in navigator) navigator.vibrate(200);
-         showToast(`Focus session completed! (${completedMins}m)`, 'success');
+         // Increment focus streak
+         const streak = parseInt(localStorage.getItem('dayplanner_focus_streak') || '0') + 1;
+         localStorage.setItem('dayplanner_focus_streak', String(streak));
+         showToast(`Focus session completed! (${completedMins}m) 🔥 Streak: ${streak}`, 'success');
+       } else if (status === 'abandoned') {
+         // Reset streak on abandon
+         localStorage.setItem('dayplanner_focus_streak', '0');
        }
     },
 

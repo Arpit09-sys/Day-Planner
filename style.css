@@ -46,6 +46,7 @@
 
   /* Typography */
   --font:         'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Lora', Georgia, 'Times New Roman', serif;
   --fs-xs:        13px;
   --fs-sm:        14px;
   --fs-base:      15px;
@@ -90,27 +91,27 @@
 
 /* ---------- Dark Theme ---------- */
 :root[data-theme="dark"] {
-  --bg:           #151A18;
-  --bg-alt:       #1E2622;
-  --bg-warm:      #202923;
-  --card:         #1E2622;
-  --card-hover:   #27312C;
-  --card-focus:   #26342D;
-  --text:         #EDF1EA;
-  --text-secondary: #B5BDB4;
-  --text-tertiary:  #7D887F;
-  --text-inverse:   #151A18;
-  --border:       #344139;
-  --border-light: #29342E;
+  --bg:           #1A1814;
+  --bg-alt:       #22201A;
+  --bg-warm:      #252219;
+  --card:         #22201A;
+  --card-hover:   #2C291F;
+  --card-focus:   #262E22;
+  --text:         #EDE8DF;
+  --text-secondary: #B5AFA4;
+  --text-tertiary:  #7D7870;
+  --text-inverse:   #1A1814;
+  --border:       #3A3530;
+  --border-light: #2E2A24;
   --primary-light: rgba(94,158,145,0.18);
   --success-light: rgba(99,163,115,0.16);
   --amber-light:   rgba(212,158,85,0.16);
   --coral-light:   rgba(210,118,100,0.16);
-  --shadow-xs:   0 1px 2px rgba(0,0,0,0.15);
-  --shadow-sm:   0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12);
-  --shadow-md:   0 4px 12px rgba(0,0,0,0.25), 0 2px 4px rgba(0,0,0,0.15);
-  --shadow-lg:   0 8px 24px rgba(0,0,0,0.3), 0 4px 8px rgba(0,0,0,0.2);
-  --shadow-card: 0 1px 4px rgba(0,0,0,0.2), 0 4px 16px rgba(0,0,0,0.12);
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.25);
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md:   0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.25);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.3);
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
 }
 
 /* ---------- 2. Reset & Base ---------- */
@@ -119,11 +120,16 @@
 html {
   font-family: var(--font);
   font-size: var(--fs-base);
-  line-height: 1.6;
   color: var(--text);
   background: var(--bg);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
+  -moz-osx-font-smoothing: grayscale;
+  /* Paper texture — subtle noise */
+  background-image:
+    repeating-conic-gradient(var(--bg-alt) 0% 25%, transparent 0% 50%);
+  background-size: 4px 4px;
+  background-blend-mode: multiply;
 }
 
 body {
@@ -452,16 +458,23 @@ a:hover { text-decoration: underline; }
 .btn svg { width: 16px; height: 16px; }
 
 /* ---------- 6. Main Layout ---------- */
-.app { display: none; }
-.app.active { display: block; animation: fadeUp 360ms ease-out; }
+.app { display: none; opacity: 0; }
+.app.active { display: block; animation: appFadeIn 0.5s ease-out forwards; }
+
+@keyframes appFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .greeting {
   padding: var(--sp-8) 0 var(--sp-4);
+  animation: fadeUp 0.5s ease-out;
 }
 .greeting__hello {
+  font-family: var(--font-display);
   font-size: var(--fs-3xl);
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.01em;
   margin-bottom: var(--sp-1);
 }
 .greeting__message {
@@ -469,6 +482,24 @@ a:hover { text-decoration: underline; }
   color: var(--text-secondary);
   line-height: 1.5;
 }
+.greeting__quote {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+  margin-top: var(--sp-3);
+  line-height: 1.6;
+  opacity: 0;
+  animation: fadeIn 1s ease-out 0.3s forwards;
+}
+
+/* Time-of-day greeting accents */
+.greeting--morning .greeting__hello { color: #8B6914; }
+.greeting--afternoon .greeting__hello { color: var(--primary); }
+.greeting--evening .greeting__hello { color: #6B5B8A; }
+.greeting--night .greeting__hello { color: var(--text-secondary); }
+:root[data-theme="dark"] .greeting--morning .greeting__hello { color: #D4A843; }
+:root[data-theme="dark"] .greeting--evening .greeting__hello { color: #9B8BBD; }
 
 /* Two-column layout */
 .main-layout {
@@ -477,6 +508,26 @@ a:hover { text-decoration: underline; }
   gap: var(--sp-8);
   padding-bottom: var(--sp-16);
 }
+
+/* Carry-forward banner */
+.carry-forward {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  margin-bottom: var(--sp-5);
+  background: var(--amber-light);
+  border: 1.5px solid var(--amber);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  animation: fadeUp 0.4s ease-out;
+}
+.carry-forward.hidden { display: none; }
+.carry-forward__text { flex: 1; }
+.carry-forward__text strong { font-weight: 700; }
+.carry-forward__actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
 
 /* ---------- 7. Now / Focus Card ---------- */
 .now-card {
@@ -1303,6 +1354,23 @@ a:hover { text-decoration: underline; }
   color: var(--text-tertiary);
   border-top: 1px solid var(--border-light);
 }
+.footer__shortcuts {
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+.footer__shortcuts kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-alt);
+  box-shadow: 0 1px 0 var(--border);
+}
 
 /* ---------- 15. Week Planner ---------- */
 .week-header {
@@ -1461,6 +1529,67 @@ a:hover { text-decoration: underline; }
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Confetti particles */
+.confetti-container {
+  position: fixed;
+  pointer-events: none;
+  z-index: 999;
+}
+.confetti-particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: confettiBurst 0.8s ease-out forwards;
+}
+@keyframes confettiBurst {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.3); }
+}
+
+/* Right-click context menu */
+.context-menu {
+  position: fixed;
+  z-index: 800;
+  min-width: 180px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-2) 0;
+  animation: fadeUp 0.15s ease-out;
+}
+.context-menu.hidden { display: none; }
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.context-menu__item:hover { background: var(--bg-alt); }
+.context-menu__item--danger { color: var(--coral); }
+.context-menu__item--danger:hover { background: var(--coral-light); }
+.context-menu__divider { height: 1px; margin: var(--sp-1) 0; background: var(--border-light); }
+
+/* Focus streak badge */
+.focus-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--coral-light);
+  color: var(--coral);
+}
+.focus-streak__flame { font-size: 14px; }
 
 /* ---------- 17. Responsive ---------- */
 @media (max-width: 1024px) {
